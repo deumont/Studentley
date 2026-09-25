@@ -1,16 +1,29 @@
-// Deliberately local-only. Replace these demo functions with calls to a secure
-// server-side API when AI is introduced; never place an API key in the browser.
-const questions = [
-  { topic: 'Algebra', prompt: 'Solve: 3x + 5 = 20', options: ['x = 3', 'x = 5', 'x = 7', 'x = 15'], answer: 1 },
-  { topic: 'Algebra', prompt: 'Which expression is equivalent to 2(a + 4)?', options: ['2a + 4', '2a + 8', 'a + 8', '2a + 6'], answer: 1 },
-  { topic: 'Forces', prompt: 'What is the unit of force?', options: ['Watt', 'Joule', 'Newton', 'Volt'], answer: 2 },
-  { topic: 'Reading', prompt: 'A text’s main idea is best described as…', options: ['A small detail', 'Its central message', 'The longest paragraph', 'The title only'], answer: 1 }
-]
+import { supabase } from '../lib/supabase'
 
-export async function generateMockExam({ subject = 'Mathematics', count = 4 } = {}) {
-  return { title: `${subject} practice exam`, questions: questions.slice(0, Number(count)) }
+export const AI_OPERATIONS = Object.freeze({
+  ANALYZE_DOCUMENT: 'analyzeDocument', ANALYZE_TIMETABLE: 'analyzeTimetable',
+  EXTRACT_EXAM_SCHEDULE: 'extractExamSchedule', GENERATE_QUIZ: 'generateQuiz',
+  GENERATE_FLASHCARDS: 'generateFlashcards', GENERATE_SUMMARY: 'generateSummary',
+  GENERATE_MOCK_EXAM: 'generateMockExam', GENERATE_STUDY_PLAN: 'generateStudyPlan',
+  ANALYZE_PROGRESS: 'analyzeProgress', ANSWER_STUDY_QUESTION: 'answerStudyQuestion',
+})
+
+export async function requestAI(operation, input) {
+  if (!Object.values(AI_OPERATIONS).includes(operation)) throw new Error('Unknown AI operation.')
+  const { data } = await supabase.auth.getSession()
+  const response = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` }, body: JSON.stringify({ operation, input }) })
+  const result = await response.json()
+  if (!response.ok) throw new Error(result.message || result.error || 'AI integration is not enabled yet.')
+  return result
 }
 
-export async function generateQuiz() { return questions.slice(0, 3) }
-export async function generateFlashcards() { return [{ front: 'la casa', back: 'the house' }, { front: 'la escuela', back: 'the school' }, { front: 'los libros', back: 'the books' }] }
-export async function generateStudyPlan() { return [] }
+export const analyzeDocument = input => requestAI(AI_OPERATIONS.ANALYZE_DOCUMENT, input)
+export const analyzeTimetable = input => requestAI(AI_OPERATIONS.ANALYZE_TIMETABLE, input)
+export const extractExamSchedule = input => requestAI(AI_OPERATIONS.EXTRACT_EXAM_SCHEDULE, input)
+export const generateQuiz = input => requestAI(AI_OPERATIONS.GENERATE_QUIZ, input)
+export const generateFlashcards = input => requestAI(AI_OPERATIONS.GENERATE_FLASHCARDS, input)
+export const generateSummary = input => requestAI(AI_OPERATIONS.GENERATE_SUMMARY, input)
+export const generateMockExam = input => requestAI(AI_OPERATIONS.GENERATE_MOCK_EXAM, input)
+export const generateStudyPlan = input => requestAI(AI_OPERATIONS.GENERATE_STUDY_PLAN, input)
+export const analyzeProgress = input => requestAI(AI_OPERATIONS.ANALYZE_PROGRESS, input)
+export const answerStudyQuestion = input => requestAI(AI_OPERATIONS.ANSWER_STUDY_QUESTION, input)

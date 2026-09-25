@@ -1,7 +1,7 @@
 {
   "name": "istudent",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -9,10 +9,14 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
     "@vitejs/plugin-react": "latest",
-    "vite": "latest",
+    "lucide-react": "^0.468.0",
     "react": "latest",
-    "react-dom": "latest"
+    "react-dom": "latest",
+    "react-router-dom": "^7.9.1",
+    "stripe": "^17.7.0",
+    "vite": "latest"
   },
   "devDependencies": {}
 }
