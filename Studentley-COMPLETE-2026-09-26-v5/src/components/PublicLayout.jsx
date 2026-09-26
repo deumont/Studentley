@@ -22,6 +22,6 @@ export default function PublicLayout({ children }) {
       </nav>
     </header>
     {children}
-    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><span>S</span><b>Studentley</b></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><a href="/#features">Features</a><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy</Link><Link to="/legal/terms">Terms</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
+    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><span>S</span><b>Studentley</b></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><a href="/#features">Features</a><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy Policy</Link><Link to="/legal/terms">Terms & Conditions</Link><Link to="/legal/imprint">Legal Notice</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
   </div>
 }
