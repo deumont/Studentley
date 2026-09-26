@@ -290,7 +290,7 @@ where stats.user_id = totals.user_id;
 
 create or replace function public.get_study_leaderboard(entry_limit integer default 50)
 returns table (
-  position bigint,
+  "position" bigint,
   display_name text,
   study_points bigint,
   current_streak integer,
