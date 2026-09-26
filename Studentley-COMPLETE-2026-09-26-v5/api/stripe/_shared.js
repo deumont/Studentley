@@ -3,7 +3,7 @@ import { createClient } from '@supabase/supabase-js'
 
 export function stripeClient() {
   if (!process.env.STRIPE_SECRET_KEY) throw Object.assign(new Error('Stripe is not configured.'), { status: 503 })
-  return new Stripe(process.env.STRIPE_SECRET_KEY)
+  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-03-31.basil' })
 }
 
 export function adminClient() {
