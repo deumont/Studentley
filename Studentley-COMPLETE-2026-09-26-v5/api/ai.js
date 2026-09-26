@@ -56,7 +56,7 @@ async function getProfileAndUsage(db, userId, metric) {
   monday.setUTCDate(monday.getUTCDate() - day + 1)
   const period = monday.toISOString().slice(0, 10)
   const [{ data: profile, error: profileError }, { data: counter, error: usageError }] = await Promise.all([
-    db.from('profiles').select('subscription_plan,timezone,daily_study_minutes,goals').eq('id', userId).single(),
+    db.from('profiles').select('subscription_plan,timezone,daily_study_minutes,goals,grade_year,school_system').eq('id', userId).single(),
     db.from('usage_counters').select('count').eq('user_id', userId).eq('metric', metric).eq('period_start', period).maybeSingle(),
   ])
   if (profileError) throw profileError
@@ -78,11 +78,22 @@ function schemaFor(operation) {
   if (['analyzeDocument', 'generateSummary'].includes(operation)) return { ...base, properties: { title: { type: 'string' }, summary: { type: 'string' }, key_points: stringArray, topics: stringArray, review_questions: stringArray }, required: ['title', 'summary', 'key_points', 'topics', 'review_questions'] }
   if (operation === 'analyzeTimetable') return { ...base, properties: { entries: { type: 'array', items: { ...base, properties: { subject: { type: 'string' }, day_of_week: { type: 'integer', minimum: 1, maximum: 7 }, start_time: { type: 'string' }, end_time: { type: 'string' }, classroom: { type: 'string' } }, required: ['subject', 'day_of_week', 'start_time', 'end_time', 'classroom'] } } }, required: ['entries'] }
   if (operation === 'extractExamSchedule') return { ...base, properties: { entries: { type: 'array', items: { ...base, properties: { subject: { type: 'string' }, title: { type: 'string' }, exam_at: { type: 'string' }, paper: { type: 'string' }, topics: stringArray, notes: { type: 'string' } }, required: ['subject', 'title', 'exam_at', 'paper', 'topics', 'notes'] } } }, required: ['entries'] }
-  if (['generateQuiz', 'generateMockExam'].includes(operation)) return { ...base, properties: { title: { type: 'string' }, items: { type: 'array', items: { ...base, properties: { prompt: { type: 'string' }, options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } }, correct_index: { type: 'integer', minimum: 0, maximum: 3 }, explanation: { type: 'string' } }, required: ['prompt', 'options', 'correct_index', 'explanation'] } } }, required: ['title', 'items'] }
+  if (operation === 'generateQuiz') return { ...base, properties: { title: { type: 'string' }, items: { type: 'array', items: { ...base, properties: { prompt: { type: 'string' }, options: { type: 'array', minItems: 4, maxItems: 4, items: { type: 'string' } }, correct_index: { type: 'integer', minimum: 0, maximum: 3 }, explanation: { type: 'string' } }, required: ['prompt', 'options', 'correct_index', 'explanation'] } } }, required: ['title', 'items'] }
+  if (operation === 'generateMockExam') return { ...base, properties: { title: { type: 'string' }, qualification: { type: 'string' }, subject: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 20, maximum: 240 }, instructions: stringArray, items: { type: 'array', items: { ...base, properties: { number: { type: 'string' }, section: { type: 'string' }, context: { type: 'string' }, prompt: { type: 'string' }, marks: { type: 'integer', minimum: 1, maximum: 30 }, answer_lines: { type: 'integer', minimum: 0, maximum: 24 }, question_type: { type: 'string', enum: ['written', 'calculation', 'multiple_choice', 'diagram', 'extended_response'] }, options: stringArray, diagram_type: { type: 'string', enum: ['none', 'coordinate_grid', 'triangle', 'atom', 'circuit', 'blank'] }, diagram_caption: { type: 'string' }, diagram_labels: stringArray, mark_scheme: stringArray }, required: ['number', 'section', 'context', 'prompt', 'marks', 'answer_lines', 'question_type', 'options', 'diagram_type', 'diagram_caption', 'diagram_labels', 'mark_scheme'] } } }, required: ['title', 'qualification', 'subject', 'duration_minutes', 'instructions', 'items'] }
   if (operation === 'generateFlashcards') return { ...base, properties: { title: { type: 'string' }, items: { type: 'array', items: { ...base, properties: { front: { type: 'string' }, back: { type: 'string' } }, required: ['front', 'back'] } } }, required: ['title', 'items'] }
   if (operation === 'generateStudyPlan') return { ...base, properties: { title: { type: 'string' }, rationale: { type: 'string' }, items: { type: 'array', items: { ...base, properties: { title: { type: 'string' }, subject: { type: 'string' }, starts_at: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 5, maximum: 180 }, notes: { type: 'string' } }, required: ['title', 'subject', 'starts_at', 'duration_minutes', 'notes'] } } }, required: ['title', 'rationale', 'items'] }
   if (operation === 'analyzeProgress') return { ...base, properties: { summary: { type: 'string' }, strengths: stringArray, focus_areas: stringArray, next_steps: stringArray }, required: ['summary', 'strengths', 'focus_areas', 'next_steps'] }
   return { ...base, properties: { answer: { type: 'string' }, sources: stringArray }, required: ['answer', 'sources'] }
+}
+
+function examLevel(input, profile) {
+  const requested = String(input.qualification || '').trim()
+  if (requested) return requested
+  const system = String(profile?.school_system || '').trim()
+  if (system) return system
+  const grade = String(input.gradeYear || profile?.grade_year || '')
+  const number = Number(grade.match(/\d+/)?.[0])
+  return Number.isFinite(number) && number <= 6 ? 'Primary' : 'GCSE'
 }
 
 function instructionFor(operation, input, context) {
@@ -93,19 +104,25 @@ function instructionFor(operation, input, context) {
   if (operation === 'analyzeTimetable') return `${common} Extract real weekly classes. day_of_week is 1 Monday through 7 Sunday. Times must be HH:MM in 24-hour format. Use an empty string for a classroom not shown.`
   if (operation === 'extractExamSchedule') return `${common} Extract only actual exams. exam_at must be ISO 8601 with timezone when known. Today is ${new Date().toISOString()}. The student's timezone is ${input.timezone || context.profile?.timezone || 'UTC'}. Use empty strings when paper or notes are absent.`
   if (operation === 'generateQuiz') return `${common} Create exactly ${count} distinct multiple-choice questions. Difficulty: ${input.difficulty || 'Medium'}. Focus: ${input.topic || 'the most important material'}. Every question needs four plausible options, one correct_index, and a short explanation.`
-  if (operation === 'generateMockExam') return `${common} Create exactly ${count} challenging exam-style multiple-choice questions grounded in the material. Focus: ${input.topic || 'balanced coverage'}. Every question needs four options, one correct_index, and a marking explanation.`
+  if (operation === 'generateMockExam') {
+    const level = examLevel(input, context.profile)
+    const grade = input.gradeYear || context.profile?.grade_year || 'not specified'
+    const requestedMarks = Math.max(20, Math.min(Number(input.totalMarks) || 60, 120))
+    const style = input.assessmentStyle || 'Mostly written'
+    return `${common} Create a formal, multi-page ${level} mock examination for grade/year ${grade} in ${input.subjectName || context.subject?.name || 'the selected subject'}, based only on the selected uploaded material. Target ${requestedMarks} total marks across approximately ${count} numbered questions and ${Number(input.durationMinutes) || 90} minutes. Focus: ${input.topic || 'balanced coverage of the supplied material'}. Difficulty: ${input.difficulty || 'Medium'}. Assessment style: ${style}. Calculator policy: ${input.calculatorPolicy || 'Follow normal subject expectations'}. Additional instructions: ${input.customInstructions || 'none'}. Primary papers may use some clear tick-box or multiple-choice questions alongside short written answers. GCSE/IGCSE papers must be predominantly structured written, calculation, diagram and explanation questions, with no more than 15 percent of marks from multiple choice. IB, A-Level and AP papers must contain almost no multiple choice (maximum 5 percent of marks) and should emphasize multi-step reasoning, analysis and extended responses. Match the subject: mathematics should require shown working and may use geometry or coordinate diagrams; sciences should include calculations, explanations, practical interpretation and suitable diagrams; languages and humanities should use source-based and extended writing tasks. Use meaningful sections and multi-part numbering such as 1(a), 1(b). Allocate realistic marks, enough answer_lines for each response, and a concise mark_scheme with one point per marking idea. Write formulas in clear plain-text notation suitable for printing, such as x^2, 3/4, ->, <= and >=. options must contain exactly four choices only for multiple_choice questions and be an empty array otherwise. Use diagram_type only when a simple printable figure genuinely helps; otherwise use none. The sum of marks should be close to ${requestedMarks}.`
+  }
   if (operation === 'generateFlashcards') return `${common} Create exactly ${count} concise flashcards. Focus: ${input.topic || 'the most useful knowledge for recall'}. Each front must be a question or term and each back a clear answer.`
-  if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Every study topic and activity must be grounded in the selected uploaded document; do not add topics that are not supported by that source. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable and exams. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
+  if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Every study topic and activity must be grounded in the selected uploaded documents; combine overlapping material sensibly and do not add unsupported topics. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable and exams. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Preferred session length: ${Number(input.sessionMinutes) || 45} minutes. Study approach: ${input.studyApproach || 'Balanced'}. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
   if (operation === 'analyzeProgress') return `${common} Analyze the supplied completed sessions and practice results. Be encouraging but honest. Give concrete strengths, focus areas, and next steps. If data is sparse, say so.`
   return `${common} Answer the student's question directly and helpfully. Use the selected source when provided and cite its filename in sources. If the answer is not supported by the source, clearly say what is uncertain. Never claim to have read a source that was not supplied.`
 }
 
-async function callOpenAI(operation, input, context, filePart) {
+async function callOpenAI(operation, input, context, fileParts = []) {
   const key = process.env.OPENAI_API_KEY || process.env.iStudent_Key_OpenAi || process.env.ISTUDENT_KEY_OPENAI
   if (!key) throw Object.assign(new Error('The OpenAI key is not configured on the server.'), { status: 503 })
   const { history: _history, ...requestInput } = input
   const content = [{ type: 'input_text', text: JSON.stringify({ request: requestInput, context: context.text }) }]
-  if (filePart) content.push(filePart)
+  content.push(...fileParts.filter(Boolean))
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 55000)
   let response
@@ -117,7 +134,7 @@ async function callOpenAI(operation, input, context, filePart) {
         model: process.env.OPENAI_MODEL || 'gpt-5-mini', store: false,
         input: [{ role: 'system', content: [{ type: 'input_text', text: instructionFor(operation, input, context) }] }, { role: 'user', content }],
         text: { format: { type: 'json_schema', name: 'studentley_result', strict: true, schema: schemaFor(operation) } },
-        max_output_tokens: operation === 'generateMockExam' ? 7000 : 4500,
+        max_output_tokens: operation === 'generateMockExam' ? 12000 : 4500,
       }),
     })
   } catch (error) {
@@ -145,11 +162,13 @@ async function ensureSubject(db, userId, name, fallbackId = null) {
 }
 
 async function buildContext(db, userId, input, profile) {
-  const [document, subjectResult] = await Promise.all([
-    input.documentId ? ownedRecord(db, 'documents', input.documentId, userId, 'id,name,storage_path,mime_type,category,status,subject_id') : null,
+  const documentIds = [...new Set([...(Array.isArray(input.documentIds) ? input.documentIds : []), input.documentId].filter(Boolean))].slice(0, 5)
+  const [documents, subjectResult] = await Promise.all([
+    Promise.all(documentIds.map(id => ownedRecord(db, 'documents', id, userId, 'id,name,storage_path,mime_type,category,status,subject_id'))),
     input.subjectId ? ownedRecord(db, 'subjects', input.subjectId, userId, 'id,name') : null,
   ])
-  return { document, subject: subjectResult, profile, text: { selected_document: document?.name || null, selected_subject: subjectResult?.name || null } }
+  const document = documents[0] || null
+  return { document, documents, subject: subjectResult, profile, text: { selected_documents: documents.map(item => item.name), selected_subject: subjectResult?.name || null } }
 }
 
 async function addWorkspaceContext(db, userId, operation, context) {
@@ -202,20 +221,31 @@ async function persistResult(db, userId, operation, input, context, result) {
   }
   if (['generateQuiz', 'generateFlashcards', 'generateMockExam'].includes(operation)) {
     const kind = operation === 'generateQuiz' ? 'quiz' : operation === 'generateFlashcards' ? 'flashcards' : 'mock_exam'
-    const { data, error } = await db.from('practice_sets').insert({ user_id: userId, subject_id: input.subjectId || context.document?.subject_id || null, document_id: input.documentId || null, title: result.title, kind, config: { difficulty: input.difficulty || 'Medium', topic: input.topic || '', count: result.items?.length || 0 }, items: result.items || [] }).select().single()
+    const documentIds = (context.documents || []).map(item => item.id)
+    const totalMarks = operation === 'generateMockExam' ? (result.items || []).reduce((sum, item) => sum + Number(item.marks || 0), 0) : null
+    const config = operation === 'generateMockExam'
+      ? { difficulty: input.difficulty || 'Medium', topic: input.topic || '', count: result.items?.length || 0, documentIds, qualification: result.qualification || examLevel(input, context.profile), gradeYear: input.gradeYear || context.profile?.grade_year || '', subjectName: result.subject || input.subjectName || context.subject?.name || '', durationMinutes: result.duration_minutes || Number(input.durationMinutes) || 90, totalMarks, instructions: result.instructions || [], assessmentStyle: input.assessmentStyle || 'Mostly written', calculatorPolicy: input.calculatorPolicy || 'Follow normal subject expectations', customInstructions: input.customInstructions || '' }
+      : { difficulty: input.difficulty || 'Medium', topic: input.topic || '', count: result.items?.length || 0, documentIds }
+    const { data, error } = await db.from('practice_sets').insert({ user_id: userId, subject_id: input.subjectId || context.document?.subject_id || null, document_id: context.document?.id || null, title: result.title, kind, config, items: result.items || [] }).select().single()
     if (error) throw error
     return { practiceSet: data }
   }
   if (operation === 'generateStudyPlan') {
+    if (input.replaceExisting) {
+      const { error: replaceError } = await db.from('study_sessions').delete().eq('user_id', userId).gte('starts_at', new Date().toISOString()).is('completed_at', null).like('notes', '[AI_PLAN]%')
+      if (replaceError) throw replaceError
+    }
     const { data: existing = [], error: existingError } = await db.from('study_sessions').select('title,starts_at').eq('user_id', userId).gte('starts_at', new Date().toISOString())
     if (existingError) throw existingError
     const rows = []
+    const documentIds = (context.documents || []).map(item => item.id)
     for (const item of result.items || []) {
       const startsAt = isoDate(item.starts_at)
       if (!startsAt || new Date(startsAt) < new Date(Date.now() - 3600000)) continue
       const subjectId = await ensureSubject(db, userId, item.subject)
       const title = item.title.slice(0, 180)
-      if (!existing.some(session => session.title.toLowerCase() === title.toLowerCase() && session.starts_at === startsAt)) rows.push({ user_id: userId, subject_id: subjectId, title, starts_at: startsAt, duration_minutes: Math.min(180, Math.max(5, item.duration_minutes)), material_document_id: input.documentId, notes: `[AI_PLAN] ${item.notes || result.rationale || ''}`.trim() })
+      const planMetadata = JSON.stringify({ documentIds, detail: item.notes || result.rationale || '', studyApproach: input.studyApproach || 'Balanced', sessionMinutes: Number(input.sessionMinutes) || 45, focus: input.focus || '' })
+      if (!existing.some(session => session.title.toLowerCase() === title.toLowerCase() && session.starts_at === startsAt)) rows.push({ user_id: userId, subject_id: subjectId, title, starts_at: startsAt, duration_minutes: Math.min(180, Math.max(5, item.duration_minutes)), material_document_id: documentIds[0] || null, notes: `[AI_PLAN] ${planMetadata}` })
     }
     if (rows.length) { const { error } = await db.from('study_sessions').insert(rows); if (error) throw error }
     return { title: result.title, rationale: result.rationale, imported: rows.length, items: rows }
@@ -232,9 +262,10 @@ export default async function handler(request, response) {
     const operation = request.body?.operation
     const input = request.body?.input || {}
     if (!operations.has(operation)) return response.status(400).json({ error: 'Unknown AI operation.' })
-    if (['generateQuiz', 'generateFlashcards', 'generateMockExam'].includes(operation) && !input.documentId && !input.subjectId && !input.topic?.trim()) return response.status(400).json({ error: 'Choose a document, subject, or topic first.' })
+    const hasDocuments = Boolean(input.documentId) || (Array.isArray(input.documentIds) && input.documentIds.length > 0)
+    if (['generateQuiz', 'generateFlashcards', 'generateMockExam'].includes(operation) && !hasDocuments && !input.subjectId && !input.topic?.trim()) return response.status(400).json({ error: 'Choose a document, subject, or topic first.' })
     if (documentOperations.has(operation) && !input.documentId) return response.status(400).json({ error: 'Choose a document first.' })
-    if (operation === 'generateStudyPlan' && !input.documentId) return response.status(400).json({ error: 'Upload and choose study material before creating a personalized plan.' })
+    if (operation === 'generateStudyPlan' && !hasDocuments) return response.status(400).json({ error: 'Upload and choose study material before creating a personalized plan.' })
     if (operation === 'answerStudyQuestion' && !input.question?.trim()) return response.status(400).json({ error: 'Enter a question first.' })
     db = serviceClient()
     const metric = metricFor(operation)
@@ -243,15 +274,14 @@ export default async function handler(request, response) {
     const context = await buildContext(db, user.id, input, profile)
     context.inputHistory = input.history
     await addWorkspaceContext(db, user.id, operation, context)
-    let filePart = null
+    const fileParts = await Promise.all((context.documents || []).map(document => signedDocumentPart(db, document)))
     if (context.document) {
-      filePart = await signedDocumentPart(db, context.document)
       if (documentOperations.has(operation)) {
         documentToReset = context.document.id
         await db.from('documents').update({ status: 'processing' }).eq('id', context.document.id).eq('user_id', user.id)
       }
     }
-    const result = await callOpenAI(operation, input, context, filePart)
+    const result = await callOpenAI(operation, input, context, fileParts)
     await recordUsage(request, metric)
     const persisted = await persistResult(db, user.id, operation, input, context, result)
     if (documentToReset) await db.from('documents').update({ status: 'ready' }).eq('id', documentToReset).eq('user_id', user.id)

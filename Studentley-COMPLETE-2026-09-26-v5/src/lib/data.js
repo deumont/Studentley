@@ -105,3 +105,11 @@ export async function submitPracticeResult(practiceSetId, answers) {
   if (error) throw error
   return data
 }
+
+export async function submitMockExamResult(practiceSetId, scorePercent) {
+  const { data } = await supabase.auth.getSession()
+  const response = await fetch('/api/mock-result', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` }, body: JSON.stringify({ practiceSetId, scorePercent }) })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || 'The mock exam score could not be saved.')
+  return result
+}
