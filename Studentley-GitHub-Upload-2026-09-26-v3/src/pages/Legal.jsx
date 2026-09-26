@@ -1,0 +1,8 @@
+import React from 'react'
+import { ArrowLeft, ShieldCheck } from 'lucide-react'
+import { Link, useParams } from 'react-router-dom'
+
+export default function Legal() {
+  const { document } = useParams(), privacy = document === 'privacy'
+  return <main className="legal-page"><article className="card legal-card"><Link to="/" className="back-link"><ArrowLeft /> Back to Studentley</Link><span className="icon-bubble blue"><ShieldCheck /></span><h1>{privacy ? 'Privacy Policy' : 'Terms of Service'}</h1><p className="muted">Last updated 26 September 2026</p>{privacy ? <><h2>Your data</h2><p>Studentley stores account details, school-planning records and files only to provide the service. Records are isolated by account, and uploaded files are private.</p><h2>AI and payments</h2><p>AI is not connected in this release. Subscription status is verified server-side through Stripe test-mode architecture when configured.</p><h2>Your choices</h2><p>You can export your stored files individually and permanently delete your account from Settings. Date of birth is private and is used only for age-appropriate account handling.</p></> : <><h2>Using Studentley</h2><p>Use Studentley for your own lawful school and study activity. You are responsible for the material you upload and for keeping your account credentials secure.</p><h2>Service availability</h2><p>Features that depend on external services require the project owner to configure those services. AI actions clearly remain unavailable until enabled.</p><h2>Subscriptions</h2><p>No live payment is activated by this build. Any configured checkout must use Stripe test mode until the project owner intentionally completes a production review.</p></>}</article></main>
+}
