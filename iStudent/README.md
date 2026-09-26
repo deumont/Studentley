@@ -1,6 +1,6 @@
-# iStudent
+# Studentley
 
-iStudent is a production-oriented personal school and study operating system. New accounts start completely clean: the application never inserts demo subjects, exams, tasks, files, scores, or study sessions.
+Studentley is a production-oriented personal school and study operating system. New accounts start completely clean: the application never inserts demo subjects, exams, tasks, files, scores, or study sessions.
 
 ## What is included
 
@@ -29,9 +29,11 @@ AI entry points live in `src/services/ai.js` and `/api/ai.js`. The API currently
 2. Install the Supabase CLI and link the project, or run the SQL in `supabase/migrations/202609250001_initial.sql` from the Supabase SQL editor.
 3. In Supabase Authentication, enable email/password sign-in and email confirmation.
 4. Add local and production URLs to Authentication → URL Configuration:
+   - Set **Site URL** to the live Vercel origin, for example `https://your-app.vercel.app`
    - `http://localhost:5173/auth/verify`
    - `http://localhost:5173/auth/reset`
-   - the equivalent production URLs
+   - `https://your-app.vercel.app/auth/verify`
+   - `https://your-app.vercel.app/auth/reset`
 5. Copy `.env.example` to `.env.local` and fill in the Supabase values.
 6. Install and run:
 

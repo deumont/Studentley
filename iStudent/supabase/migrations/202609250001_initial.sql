@@ -1,4 +1,4 @@
--- iStudent production schema. Apply with `supabase db push`.
+-- Studentley production schema. Apply with `supabase db push`.
 create extension if not exists pgcrypto;
 
 create table public.profiles (

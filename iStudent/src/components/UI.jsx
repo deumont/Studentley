@@ -1,5 +1,6 @@
 import React, { useEffect } from 'react'
-import { AlertCircle, LoaderCircle, Sparkles, X } from 'lucide-react'
+import { AlertCircle, Crown, LoaderCircle, Sparkles, X } from 'lucide-react'
+import { Link } from 'react-router-dom'
 
 export function Button({ variant = 'primary', className = '', loading, children, ...props }) {
   return <button className={`button ${variant} ${className}`} disabled={loading || props.disabled} {...props}>{loading && <LoaderCircle className="spin" size={17} />}{children}</button>
@@ -20,6 +21,10 @@ export function Modal({ title, description, onClose, children, wide = false }) {
 
 export function AiUnavailable({ onClose }) {
   return <Modal title="Ready for the next step" description="The experience is built, but AI integration is not enabled yet." onClose={onClose}><div className="ai-message"><span className="icon-bubble violet"><Sparkles /></span><div><strong>Your data stays untouched</strong><p>No result has been invented or generated. This action will become available when the secure server-side AI service is connected.</p></div></div><Button className="full" onClick={onClose}>Got it</Button></Modal>
+}
+
+export function UpgradeModal({ feature, plan = 'Plus', onClose }) {
+  return <Modal title={`${feature} is included with ${plan}`} description="Your free workspace stays fully usable. Upgrade only when the extra personalization is useful to you." onClose={onClose}><div className="upgrade-message"><span className="icon-bubble violet"><Crown /></span><div><strong>Unlock {feature.toLowerCase()}</strong><p>See exactly what each plan includes before making a decision.</p></div></div><Link className="button violet full" to="/plans">View plans</Link></Modal>
 }
 
 export function Loader({ full = false, label = 'Loading…' }) { return <div className={`loader ${full ? 'full-page' : ''}`}><LoaderCircle className="spin" /><span>{label}</span></div> }

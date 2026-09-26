@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase'
 import { formatDate } from './UI'
 
 const links = [
-  ['/', Home, 'Home'], ['/upload', FileUp, 'Upload Document'], ['/study-plan', CalendarDays, 'Study Plan'],
+  ['/app', Home, 'Home'], ['/upload', FileUp, 'Upload Document'], ['/study-plan', CalendarDays, 'Study Plan'],
   ['/practice', GraduationCap, 'Practice & Exams'], ['/settings', Settings, 'Settings'],
 ]
 
@@ -18,12 +18,13 @@ export default function Layout() {
   const name = profile?.display_name || 'Student'
   const unread = data?.notifications?.filter(item => !item.read_at) || []
   useEffect(() => { const click = event => !menuRef.current?.contains(event.target) && setAccount(false); document.addEventListener('mousedown', click); return () => document.removeEventListener('mousedown', click) }, [])
+  useEffect(() => { document.title = 'Studentley' }, [])
   const openNotifications = async () => { setNotifications(value => !value); if (unread.length) { try { await markNotificationsRead(); await refresh() } catch { notify('Unable to update notifications.', 'error') } } }
   return <div className="app-shell">
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-      <div className="sidebar-top"><NavLink to="/" className="brand" onClick={() => setMobile(false)}><span>iS</span><b>iStudent</b></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <nav aria-label="Primary">{links.map(([to, Icon, label]) => <NavLink end={to === '/'} to={to} key={to} onClick={() => setMobile(false)}><Icon />{label}</NavLink>)}</nav>
+      <div className="sidebar-top"><NavLink to="/app" className="brand" onClick={() => setMobile(false)}><span>S</span><b>Studentley</b></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
+      <nav aria-label="Primary">{links.map(([to, Icon, label]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon />{label}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>Small steps every day lead to big results.</p></div>
     </aside>
     <main className="main-area">

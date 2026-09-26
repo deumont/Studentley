@@ -13,13 +13,14 @@ export default function Auth() {
   const { configured, session, profile, notify } = useApp()
   const path = useLocation().pathname
   const navigate = useNavigate()
-  const [mode, setMode] = useState(path.includes('create') ? 'signup' : path.includes('forgot') ? 'forgot' : path.includes('reset') ? 'reset' : path.includes('verify') ? 'verify' : 'signin')
+  const [mode, setMode] = useState(path === '/signup' || path.includes('create') ? 'signup' : path.includes('forgot') ? 'forgot' : path.includes('reset') ? 'reset' : path.includes('verify') ? 'verify' : 'signin')
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '', dob: '', terms: false })
   const [show, setShow] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState('')
-  useEffect(() => { if (path.includes('create')) setMode('signup'); else if (path.includes('forgot')) setMode('forgot'); else if (path.includes('reset')) setMode('reset'); else if (path.includes('verify')) setMode('verify') }, [path])
-  if (session && mode !== 'reset') return <Navigate to={profile?.onboarding_complete ? '/' : '/onboarding'} replace />
+  useEffect(() => { if (path === '/signup' || path.includes('create')) setMode('signup'); else if (path.includes('forgot')) setMode('forgot'); else if (path.includes('reset')) setMode('reset'); else if (path.includes('verify')) setMode('verify'); else setMode('signin') }, [path])
+  useEffect(() => { document.title = `${mode === 'signup' ? 'Create account' : mode === 'signin' ? 'Sign in' : mode === 'forgot' ? 'Reset password' : mode === 'reset' ? 'Choose a new password' : 'Verify your email'} — Studentley` }, [mode])
+  if (session && mode !== 'reset') return <Navigate to={profile?.onboarding_complete ? '/app' : '/onboarding'} replace />
 
-  const changeMode = next => { setMode(next); setError(''); navigate(next === 'signin' ? '/welcome' : `/auth/${next === 'signup' ? 'create-account' : next}`) }
+  const changeMode = next => { setMode(next); setError(''); navigate(next === 'signin' ? '/login' : next === 'signup' ? '/signup' : `/auth/${next}`) }
   const submit = async event => {
     event.preventDefault(); setError(''); setLoading(true)
     try {
@@ -42,7 +43,7 @@ export default function Auth() {
         if (form.password.length < 8 || form.password !== form.confirm) throw new Error('Use matching passwords with at least 8 characters.')
         const { error: authError } = await supabase.auth.updateUser({ password: form.password })
         if (authError) throw authError
-        notify('Password updated.'); navigate('/')
+        notify('Password updated.'); navigate('/app')
       }
     } catch (value) { setError(value.message || 'Something went wrong. Please try again.') }
     finally { setLoading(false) }
@@ -50,11 +51,11 @@ export default function Auth() {
 
   const title = mode === 'signup' ? 'Create your account' : mode === 'forgot' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Welcome back'
   const subtitle = mode === 'signup' ? 'Start with a clean workspace shaped around your school life.' : mode === 'forgot' ? 'We’ll email you a secure reset link.' : mode === 'reset' ? 'Use at least eight characters.' : 'Sign in to continue where you left off.'
-  return <main className="auth-page"><section className="auth-story"><Link to="/welcome" className="brand light"><span>iS</span><b>iStudent</b></Link><div className="auth-story-content"><span className="eyebrow light">Your school life, in one calm place</span><h1>Make every study session count.</h1><p>Build a personal system from your subjects, schedule, exams and material—never from made-up data.</p><div className="benefits">{benefits.map(([Icon, text]) => <div key={text}><span><Icon /></span>{text}</div>)}</div></div><p className="privacy-note"><ShieldCheck /> Private by design. Your school data belongs to you.</p></section>
+  return <main className="auth-page"><section className="auth-story"><Link to="/" className="brand light"><span>S</span><b>Studentley</b></Link><div className="auth-story-content"><span className="eyebrow light">Your school life, in one calm place</span><h1>Make every study session count.</h1><p>Build a personal system from your subjects, schedule, exams and material—never from made-up data.</p><div className="benefits">{benefits.map(([Icon, text]) => <div key={text}><span><Icon /></span>{text}</div>)}</div></div><p className="privacy-note"><ShieldCheck /> Private by design. Your school data belongs to you.</p></section>
     <section className="auth-panel"><div className="auth-card">
       {mode === 'verify' ? <Verification email={form.email} configured={configured} back={() => changeMode('signin')} /> : <>
         {(mode === 'forgot' || mode === 'reset') && <button className="back-link" onClick={() => changeMode('signin')}><ArrowLeft /> Back to sign in</button>}
-        <span className="mobile-brand"><span>iS</span>iStudent</span><h2>{title}</h2><p className="muted">{subtitle}</p>
+        <Link to="/" className="mobile-brand"><span>S</span>Studentley</Link><h2>{title}</h2><p className="muted">{subtitle}</p>
         {error && <ErrorState text={error} />}
         <form onSubmit={submit}>
           {mode === 'signup' && <><Field label="Your name"><input required autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="What should we call you?" /></Field><Field label="Date of birth" hint="Used privately for age-appropriate account handling."><input required type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} /></Field></>}
@@ -65,7 +66,7 @@ export default function Auth() {
           {mode === 'signup' && <label className="check-row"><input type="checkbox" checked={form.terms} onChange={e => setForm({ ...form, terms: e.target.checked })} /><span>I agree to the <a href="/legal/terms">Terms</a> and <a href="/legal/privacy">Privacy Policy</a>.</span></label>}
           <Button className="full auth-submit" loading={loading}>{mode === 'signup' ? 'Create account' : mode === 'signin' ? 'Sign in' : mode === 'forgot' ? 'Send reset link' : 'Update password'}</Button>
         </form>
-        {(mode === 'signin' || mode === 'signup') && <p className="auth-switch">{mode === 'signin' ? 'New to iStudent?' : 'Already have an account?'} <button onClick={() => changeMode(mode === 'signin' ? 'signup' : 'signin')}>{mode === 'signin' ? 'Create account' : 'Sign in'}</button></p>}
+        {(mode === 'signin' || mode === 'signup') && <p className="auth-switch">{mode === 'signin' ? 'New to Studentley?' : 'Already have an account?'} <button onClick={() => changeMode(mode === 'signin' ? 'signup' : 'signin')}>{mode === 'signin' ? 'Create account' : 'Sign in'}</button></p>}
       </>}
     </div></section>
   </main>
