@@ -12,8 +12,10 @@ export async function requestAI(operation, input) {
   if (!Object.values(AI_OPERATIONS).includes(operation)) throw new Error('Unknown AI operation.')
   const { data } = await supabase.auth.getSession()
   const response = await fetch('/api/ai', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` }, body: JSON.stringify({ operation, input }) })
-  const result = await response.json()
-  if (!response.ok) throw new Error(result.message || result.error || 'AI integration is not enabled yet.')
+  const text = await response.text()
+  let result
+  try { result = JSON.parse(text) } catch { throw new Error(response.ok ? 'The AI response was unreadable.' : 'The AI service is temporarily unavailable.') }
+  if (!response.ok) throw new Error(result.message || result.error || 'The AI request could not be completed.')
   return result
 }
 

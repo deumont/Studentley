@@ -19,10 +19,6 @@ export function Modal({ title, description, onClose, children, wide = false }) {
   return <div className="modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label="Close"><X /></button><h2 id="modal-title">{title}</h2>{description && <p className="muted">{description}</p>}{children}</section></div>
 }
 
-export function AiUnavailable({ onClose }) {
-  return <Modal title="Ready for the next step" description="The experience is built, but AI integration is not enabled yet." onClose={onClose}><div className="ai-message"><span className="icon-bubble violet"><Sparkles /></span><div><strong>Your data stays untouched</strong><p>No result has been invented or generated. This action will become available when the secure server-side AI service is connected.</p></div></div><Button className="full" onClick={onClose}>Got it</Button></Modal>
-}
-
 export function UpgradeModal({ feature, plan = 'Plus', onClose }) {
   return <Modal title={`${feature} is included with ${plan}`} description="Your free workspace stays fully usable. Upgrade only when the extra personalization is useful to you." onClose={onClose}><div className="upgrade-message"><span className="icon-bubble violet"><Crown /></span><div><strong>Unlock {feature.toLowerCase()}</strong><p>See exactly what each plan includes before making a decision.</p></div></div><Link className="button violet full" to="/plans">View plans</Link></Modal>
 }

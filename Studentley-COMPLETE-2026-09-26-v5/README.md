@@ -9,7 +9,7 @@ Studentley is a production-oriented personal school and study operating system. 
 - Data-driven home dashboard with intentional empty states
 - Manual subjects, tasks, study sessions, weekly timetable, and exams
 - Private document upload and management for PDF, PowerPoint, Word, TXT, JPG, and PNG files up to 25 MB
-- A complete AI Tutor workspace with subject/document context and an explicit disabled-AI state until the server key is added
+- OpenAI-powered tutoring, document analysis, summaries, timetable/exam extraction, quizzes, flashcards, mock exams, progress insights, and personalized study plans
 - A multiplayer leaderboard, study streaks, and server-awarded Studentley Points for sessions, quizzes, and mock exams
 - Light, dark, and system themes saved to the account
 - Database-backed notifications, achievements structure, usage counters, and Free/Plus/Pro subscription records
@@ -22,7 +22,7 @@ The React/Vite frontend is deployed to Vercel. Supabase provides PostgreSQL, aut
 
 All application records include a `user_id` (or use the auth user as the primary key). The included migration enables RLS and restricts every query to `auth.uid()`. Subscription changes are protected from browser updates and are written only by the server webhook.
 
-AI entry points live in `src/services/ai.js` and `/api/ai.js`. The API currently returns `AI_NOT_ENABLED` and makes no OpenAI request. `OPENAI_API_KEY` is a server-only placeholder for the next phase.
+AI entry points live in `src/services/ai.js` and `/api/ai.js`. The Vercel function authenticates the Studentley user, verifies ownership of selected records, creates short-lived private document URLs, and calls the OpenAI Responses API. Requests use structured outputs and set `store: false`, so the response is not retained as Responses API application state. Generated workspace records are written server-side.
 
 ## Local setup
 
@@ -51,7 +51,7 @@ pnpm build
 
 ## Vercel configuration
 
-Set all variables from `.env.example` in the Vercel project. `SUPABASE_SERVICE_ROLE_KEY`, Stripe secrets, and the future `OPENAI_API_KEY` must remain server-only.
+Set the Supabase and Stripe variables in the Vercel project. The AI function accepts `OPENAI_API_KEY` (recommended) and the existing `iStudent_Key_OpenAi` name. The key and `SUPABASE_SERVICE_ROLE_KEY` must remain server-only. `OPENAI_MODEL` is optional and defaults to `gpt-5-mini`.
 
 For Stripe test or live mode:
 
