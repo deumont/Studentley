@@ -1,4 +1,5 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { BarChart3, BookOpen, Check, ChevronLeft, ChevronRight, FileQuestion, Flag, GraduationCap, Pencil, Plus, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
 import { submitPracticeResult } from '../lib/data'
@@ -9,8 +10,16 @@ const nowInput = () => { const date = new Date(); date.setDate(date.getDate() + 
 
 export default function Practice() {
   const { user, data, create, update, remove, notify, refresh } = useApp()
+  const location = useLocation(), navigate = useNavigate()
   const [tab, setTab] = useState('exams'), [modal, setModal] = useState(null), [selected, setSelected] = useState(null), [progressInsight, setProgressInsight] = useState(null), [progressLoading, setProgressLoading] = useState(false)
   const exams = data?.exams || [], subjects = data?.subjects?.filter(item => !item.archived_at) || [], documents = data?.documents || [], practiceSets = data?.practice_sets || [], results = data?.practice_results || []
+  useEffect(() => {
+    const incoming = location.state?.openPracticeSet
+    if (!incoming) return
+    setSelected(incoming)
+    setTab(incoming.kind === 'quiz' ? 'quizzes' : incoming.kind === 'flashcards' ? 'flashcards' : 'mock')
+    navigate('/practice', { replace: true })
+  }, [location.state, navigate])
   const saveExam = async draft => { const payload = { subject_id: draft.subject_id || null, title: draft.title, exam_at: new Date(draft.exam_at).toISOString(), paper: draft.paper || null, topics: typeof draft.topics === 'string' ? draft.topics.split(',').map(value => value.trim()).filter(Boolean) : draft.topics, notes: draft.notes || null, preparation_progress: Number(draft.progress) }; draft.id ? await update('exams', draft.id, payload) : await create('exams', { user_id: user.id, ...payload }); setModal(null); notify(draft.id ? 'Exam updated.' : 'Exam added.') }
   const completeExam = async exam => { await update('exams', exam.id, { completed_at: exam.completed_at ? null : new Date().toISOString() }); notify(exam.completed_at ? 'Exam reopened.' : 'Exam marked complete.') }
   const earnsPoints = selected && !results.some(result => result.practice_set_id === selected.id)

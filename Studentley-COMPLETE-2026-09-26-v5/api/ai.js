@@ -95,7 +95,7 @@ function instructionFor(operation, input, context) {
   if (operation === 'generateQuiz') return `${common} Create exactly ${count} distinct multiple-choice questions. Difficulty: ${input.difficulty || 'Medium'}. Focus: ${input.topic || 'the most important material'}. Every question needs four plausible options, one correct_index, and a short explanation.`
   if (operation === 'generateMockExam') return `${common} Create exactly ${count} challenging exam-style multiple-choice questions grounded in the material. Focus: ${input.topic || 'balanced coverage'}. Every question needs four options, one correct_index, and a marking explanation.`
   if (operation === 'generateFlashcards') return `${common} Create exactly ${count} concise flashcards. Focus: ${input.topic || 'the most useful knowledge for recall'}. Each front must be a question or term and each back a clear answer.`
-  if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable and exams. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
+  if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Every study topic and activity must be grounded in the selected uploaded document; do not add topics that are not supported by that source. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable and exams. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
   if (operation === 'analyzeProgress') return `${common} Analyze the supplied completed sessions and practice results. Be encouraging but honest. Give concrete strengths, focus areas, and next steps. If data is sparse, say so.`
   return `${common} Answer the student's question directly and helpfully. Use the selected source when provided and cite its filename in sources. If the answer is not supported by the source, clearly say what is uncertain. Never claim to have read a source that was not supplied.`
 }
@@ -215,7 +215,7 @@ async function persistResult(db, userId, operation, input, context, result) {
       if (!startsAt || new Date(startsAt) < new Date(Date.now() - 3600000)) continue
       const subjectId = await ensureSubject(db, userId, item.subject)
       const title = item.title.slice(0, 180)
-      if (!existing.some(session => session.title.toLowerCase() === title.toLowerCase() && session.starts_at === startsAt)) rows.push({ user_id: userId, subject_id: subjectId, title, starts_at: startsAt, duration_minutes: Math.min(180, Math.max(5, item.duration_minutes)), notes: item.notes || result.rationale || null })
+      if (!existing.some(session => session.title.toLowerCase() === title.toLowerCase() && session.starts_at === startsAt)) rows.push({ user_id: userId, subject_id: subjectId, title, starts_at: startsAt, duration_minutes: Math.min(180, Math.max(5, item.duration_minutes)), material_document_id: input.documentId, notes: `[AI_PLAN] ${item.notes || result.rationale || ''}`.trim() })
     }
     if (rows.length) { const { error } = await db.from('study_sessions').insert(rows); if (error) throw error }
     return { title: result.title, rationale: result.rationale, imported: rows.length, items: rows }
@@ -234,6 +234,7 @@ export default async function handler(request, response) {
     if (!operations.has(operation)) return response.status(400).json({ error: 'Unknown AI operation.' })
     if (['generateQuiz', 'generateFlashcards', 'generateMockExam'].includes(operation) && !input.documentId && !input.subjectId && !input.topic?.trim()) return response.status(400).json({ error: 'Choose a document, subject, or topic first.' })
     if (documentOperations.has(operation) && !input.documentId) return response.status(400).json({ error: 'Choose a document first.' })
+    if (operation === 'generateStudyPlan' && !input.documentId) return response.status(400).json({ error: 'Upload and choose study material before creating a personalized plan.' })
     if (operation === 'answerStudyQuestion' && !input.question?.trim()) return response.status(400).json({ error: 'Enter a question first.' })
     db = serviceClient()
     const metric = metricFor(operation)
