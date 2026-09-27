@@ -12,12 +12,14 @@ import Settings from './pages/Settings'
 import Plans from './pages/Plans'
 import Legal from './pages/Legal'
 import Landing from './pages/Landing'
+import Features from './pages/Features'
 import ResetPassword from './pages/ResetPassword'
 import PersonalAI from './pages/PersonalAI'
 import Leaderboard from './pages/Leaderboard'
 import Personalization from './pages/Personalization'
 import { Loader } from './components/UI'
 import GenerationStatus from './components/GenerationStatus'
+import SeoManager from './components/SeoManager'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile } = useApp()
@@ -31,8 +33,10 @@ function Protected({ children }) {
 export default function App() {
   const { notice } = useApp()
   return <>
+    <SeoManager />
     <Routes>
       <Route path="/" element={<Landing />} />
+      <Route path="/features" element={<Features />} />
       <Route path="/plans" element={<Plans />} />
       <Route path="/login" element={<Auth />} />
       <Route path="/signup" element={<Auth />} />

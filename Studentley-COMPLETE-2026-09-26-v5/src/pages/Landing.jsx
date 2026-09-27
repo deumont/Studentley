@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react'
+import React from 'react'
 import { ArrowDown, ArrowRight, BarChart3, BookOpen, Brain, CalendarDays, Check, Clock3, FileQuestion, FileText, Flag, GraduationCap, Layers3, MessageCircle, Sparkles, Target, UploadCloud } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import PublicLayout from '../components/PublicLayout'
@@ -19,7 +19,6 @@ const features = [
 ]
 
 export default function Landing() {
-  useEffect(() => { document.title = 'Studentley — Built around the student' }, [])
   return <PublicLayout><main>
     <section className="public-hero"><div className="public-container hero-grid"><div className="hero-copy"><span className="public-pill"><Sparkles /> Built around the student</span><h1>School isn’t personalized. <em>Studentley is.</em></h1><p>Bring your material, exams and schedule into one focused system. Studentley helps you organise what matters and build study tools around your real school life.</p><div className="hero-actions"><Link className="public-cta large" to="/signup">Create your account <ArrowRight /></Link><a className="public-secondary" href="#how">Explore Studentley <ArrowDown /></a></div><div className="hero-proof"><span><Check /> Your own material</span><span><Check /> Your own schedule</span><span><Check /> No invented progress</span></div></div><ProductPreview /></div></section>
 

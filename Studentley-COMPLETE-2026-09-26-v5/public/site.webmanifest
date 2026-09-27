@@ -1,0 +1,17 @@
+{
+  "name": "Studentley",
+  "short_name": "Studentley",
+  "description": "A personal AI study workspace built around your material, schedule and goals.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#1687f8",
+  "icons": [
+    {
+      "src": "/studentley-icon.png",
+      "sizes": "1254x1254",
+      "type": "image/png",
+      "purpose": "any"
+    }
+  ]
+}
