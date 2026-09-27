@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, BrainCircuit, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Crown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Swords, Trophy, X } from 'lucide-react'
+import { Bell, Bot, CalendarDays, ChevronDown, ChevronLeft, ChevronRight, Crown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Swords, Trophy, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { markNotificationsRead } from '../lib/data'
@@ -9,10 +9,10 @@ import BrandWordmark from './BrandWordmark'
 
 const links = [
   ['/app', Home, 'home'], ['/upload', FileUp, 'upload'], ['/study-plan', CalendarDays, 'studyPlan'],
-  ['/practice', GraduationCap, 'practice'], ['/leaderboard', Trophy, 'leaderboard'], ['/personalization', BrainCircuit, 'studio', true], ['/settings', Settings, 'settings'],
+  ['/practice', GraduationCap, 'practice'], ['/leaderboard', Trophy, 'leaderboard'], ['/rivals', Swords, 'rivals'], ['/settings', Settings, 'settings'],
 ]
 
-const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Exams', leaderboard: 'Leaderboard', studio: 'Studio', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' }
+const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Exams', leaderboard: 'Leaderboard', rivals: 'Rivals', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' }
 
 export default function Layout() {
   const { user, profile, data, refresh, notify } = useApp()
@@ -27,7 +27,7 @@ export default function Layout() {
   return <div className="app-shell">
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-      <div className="sidebar-top"><NavLink to="/app" className="brand dashboard-brand" onClick={() => setMobile(false)}><BrandWordmark /></NavLink><NavLink to="/rivals" className="rivals-entry" onClick={() => setMobile(false)}><Swords /> Rivals</NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
+      <div className="sidebar-top"><NavLink to="/app" className="brand dashboard-brand" onClick={() => setMobile(false)}><BrandWordmark /></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
       <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{copy[label]}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label={copy.proRequired} />}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>{copy.quote}</p></div>
     </aside>
@@ -90,7 +90,7 @@ const planTours = {
     ],
     pro: [
       { icon: Crown, title: 'Welcome to Studentley Pro', text: 'Your highest allowances and the complete personalized Studentley experience are now active.' },
-      { icon: BrainCircuit, title: 'Your Studio is unlocked', text: 'Add your learning preferences, goals, school hours, sleep and activities so AI can adapt around your real life.', route: '/personalization' },
+      { icon: Bot, title: 'Your personal AI has its highest allowance', text: 'Ask for explanations or tell it to add study sessions, tasks, subjects and exam reminders directly to your workspace.', route: '/personal-ai' },
       { icon: Bell, title: 'Turn on study reminders', text: 'Pro reminders notify you before planned sessions, while unlimited uploads and practice keep you moving.', route: '/settings' },
     ],
     previous: 'Previous', next: 'Next', explore: 'Explore feature', done: 'Finish tour', step: 'Quick plan tour', close: 'Skip tutorial',

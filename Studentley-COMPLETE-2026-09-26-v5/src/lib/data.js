@@ -8,8 +8,7 @@ const SELECTS = {
 }
 
 export async function loadWorkspace() {
-  // This RPC is intentionally best-effort so older databases continue to load
-  // until the Pro personalization migration has been applied.
+  // Reminder generation is intentionally best-effort so an older database can still load.
   await supabase.rpc('create_due_study_reminders').then(() => {}).catch(() => {})
   const results = await Promise.all(TABLES.map(table => supabase.from(table).select(SELECTS[table] || '*').order('created_at', { ascending: false })))
   const failed = results.find(result => result.error)
@@ -167,36 +166,6 @@ export async function loadDocumentAiResults() {
   const { data, error } = await supabase.from('document_ai_results').select('*').order('updated_at', { ascending: false })
   if (error) throw error
   return data || []
-}
-
-export async function loadPersonalization() {
-  const [{ data: context, error: contextError }, { data: schedule, error: scheduleError }] = await Promise.all([
-    supabase.from('personal_contexts').select('*').maybeSingle(),
-    supabase.from('personal_schedule_entries').select('id,user_id,title,category,availability_kind,day_of_week,start_time,end_time,notes,created_at,updated_at').order('day_of_week').order('start_time'),
-  ])
-  const missing = [contextError, scheduleError].find(error => error && (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(error.code) || /schema cache|does not exist|could not find.*column/i.test(error.message || '')))
-  if (missing) return { context: null, schedule: [], migrationRequired: true }
-  if (contextError) throw contextError
-  if (scheduleError) throw scheduleError
-  return { context, schedule: schedule || [], migrationRequired: false }
-}
-
-export async function savePersonalContext(userId, changes) {
-  const { data, error } = await supabase.from('personal_contexts').upsert({ user_id: userId, ...changes }).select().single()
-  if (error) throw error
-  return data
-}
-
-export async function createScheduleEntry(record) {
-  return createRecord('personal_schedule_entries', record)
-}
-
-export async function updateScheduleEntry(id, changes) {
-  return updateRecord('personal_schedule_entries', id, changes)
-}
-
-export async function removeScheduleEntry(id) {
-  return removeRecord('personal_schedule_entries', id)
 }
 
 export async function submitMockExamResult(practiceSetId, scorePercent) {

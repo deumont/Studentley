@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Send, Sparkles, Trash2, UserRoundCog } from 'lucide-react'
-import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { askPersonalAssistant } from '../services/ai'
 import { Button, PageHeading } from '../components/UI'
@@ -14,7 +14,7 @@ const starters = [
 
 const welcome = {
   role: 'assistant',
-  text: 'I’m your personal Studentley AI. I can use your subjects, plans, deadlines and Studio preferences to help—and I can add study sessions, tasks, exams and subjects when you ask me to.',
+  text: 'I’m your personal Studentley AI. I can use your subjects, plans, deadlines and selected documents to help—and I can add study sessions, tasks, exams and subjects when you ask me to.',
   welcome: true,
 }
 
@@ -43,7 +43,6 @@ export default function PersonalAI() {
   const endRef = useRef(null)
   const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
-  const studioConnected = currentPlan === 'pro'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
 
   useEffect(() => { document.title = 'Personal AI — Studentley' }, [])
@@ -96,8 +95,7 @@ export default function PersonalAI() {
     <div className="tutor-layout personal-ai-layout">
       <aside className="card tutor-context">
         <div className="tutor-panel-title"><span className="icon-bubble violet"><UserRoundCog /></span><div><h2>Your context</h2><p>Personal and private to your account.</p></div></div>
-        <div className={`personal-ai-memory ${studioConnected ? 'connected' : ''}`}><Sparkles /><span><b>{studioConnected ? 'Studio personalization active' : 'Standard personalization'}</b><small>{studioConnected ? 'Your goals, learning style, free times and blocked times guide every response.' : 'Your workspace guides responses. Pro Studio adds your routines, availability and learning preferences.'}</small></span></div>
-        <Link className="button secondary full" to="/personalization">{studioConnected ? 'Edit Studio preferences' : 'View Studio'}</Link>
+        <div className="personal-ai-memory connected"><Sparkles /><span><b>Workspace context active</b><small>Your subjects, plans, deadlines and the source you select guide each response.</small></span></div>
         <label><span>Focus subject (optional)</span><select value={subjectId} onChange={event => setSubjectId(event.target.value)}><option value="">Use my whole workspace</option>{subjects.map(subject => <option value={subject.id} key={subject.id}>{subject.name}</option>)}</select></label>
         <label><span>Source document (optional)</span><select value={documentId} onChange={event => setDocumentId(event.target.value)}><option value="">No document selected</option>{documents.map(document => <option value={document.id} key={document.id}>{document.name}</option>)}</select></label>
         {selectedDocument && <div className="tutor-source"><FileText /><span><b>{selectedDocument.name}</b><small>Selected private source</small></span></div>}

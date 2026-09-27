@@ -17,6 +17,7 @@ async function rivalsRequest(action, input = {}) {
 export const loadRivalsDashboard = () => rivalsRequest('dashboard')
 export const loadRivalTopics = () => rivalsRequest('topics')
 export const queueRankedBattle = input => rivalsRequest('queue_ranked', input)
+export const addPracticeRival = matchId => rivalsRequest('add_practice_rival', { matchId })
 export const loadRivalMatch = matchId => rivalsRequest('get_match', { matchId })
 export const cancelRivalMatch = matchId => rivalsRequest('cancel_match', { matchId })
 export const createFriendRoom = input => rivalsRequest('create_friend_room', input)

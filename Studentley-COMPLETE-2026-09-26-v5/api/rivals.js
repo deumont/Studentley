@@ -13,6 +13,9 @@ function serviceClient() {
 const rankFor = rating => rating >= 1800 ? 'Master' : rating >= 1600 ? 'Diamond' : rating >= 1400 ? 'Platinum' : rating >= 1200 ? 'Gold' : rating >= 1000 ? 'Silver' : 'Bronze'
 const safeText = (value, length = 120) => String(value || '').trim().slice(0, length)
 const roomCode = () => Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('')
+const practiceNames = ['Alex', 'Amelia', 'Ben', 'Chloe', 'Daniel', 'Elena', 'Felix', 'Hannah', 'Isla', 'Jonas', 'Leo', 'Maya', 'Noah', 'Sofia', 'Theo', 'Zara']
+const practiceInitials = ['B.', 'C.', 'F.', 'H.', 'K.', 'L.', 'M.', 'R.', 'S.', 'T.', 'W.']
+const randomBetween = (minimum, maximum) => Math.floor(minimum + Math.random() * (maximum - minimum + 1))
 
 async function ensureRivalProfile(db, userId) {
   const { data, error } = await db.from('rival_profiles').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }).select().maybeSingle()
@@ -35,7 +38,9 @@ function publicPlayer(player, profile, currentUserId) {
   const visible = profile?.leaderboard_visible !== false || player.user_id === currentUserId
   const displayName = safeText(profile?.display_name || 'Student', 80).split(' ')[0] || 'Student'
   return {
+    player_key: player.user_id,
     user_id: player.user_id,
+    bot_id: null,
     display_name: displayName,
     avatar_path: visible ? profile?.avatar_path || '' : '',
     avatar_bucket: visible ? profile?.avatar_bucket || 'avatars' : 'avatars',
@@ -46,6 +51,26 @@ function publicPlayer(player, profile, currentUserId) {
     rating_before: player.rating_before,
     rating_after: player.rating_after,
     is_current_user: player.user_id === currentUserId,
+    is_practice_rival: false,
+  }
+}
+
+function publicPracticeRival(bot) {
+  return {
+    player_key: `practice:${bot.id}`,
+    user_id: null,
+    bot_id: bot.id,
+    display_name: bot.display_name,
+    avatar_path: '',
+    avatar_bucket: 'avatars',
+    plan_badge: null,
+    correct_answers: bot.correct_answers,
+    elapsed_ms: bot.elapsed_ms,
+    submitted_at: bot.submitted_at,
+    rating_before: bot.rating_before,
+    rating_after: bot.rating_before,
+    is_current_user: false,
+    is_practice_rival: true,
   }
 }
 
@@ -68,6 +93,12 @@ async function getPlayers(db, matchId) {
   return data || []
 }
 
+async function getPracticeRivals(db, matchId) {
+  const { data, error } = await db.from('rival_match_bots').select('*').eq('match_id', matchId)
+  if (error) throw error
+  return data || []
+}
+
 async function awardPoints(db, userId, match, points) {
   const sourceKind = match.mode === 'ranked' ? 'rival_ranked' : 'rival_friend'
   const { data: inserted, error } = await db.from('student_point_events').insert({ user_id: userId, source_kind: sourceKind, source_id: match.id, points, description: match.mode === 'ranked' ? 'Won a ranked Rivals battle' : 'Won a friend battle' }).select('id').maybeSingle()
@@ -84,31 +115,38 @@ async function awardPoints(db, userId, match, points) {
 async function finalizeMatch(db, match) {
   if (!['active', 'finishing'].includes(match.status)) return match
   const players = await getPlayers(db, match.id)
-  const submitted = players.filter(player => player.submitted_at)
+  const bots = await getPracticeRivals(db, match.id)
+  const contestants = [
+    ...players.map(player => ({ ...player, player_key: player.user_id, is_bot: false })),
+    ...bots.map(bot => ({ ...bot, player_key: `practice:${bot.id}`, is_bot: true })),
+  ]
+  const submitted = contestants.filter(player => player.submitted_at)
   const expired = match.finish_deadline && new Date(match.finish_deadline) <= new Date()
-  if (!submitted.length || (!expired && submitted.length < players.length)) return match
+  if (!submitted.length || (!expired && submitted.length < contestants.length)) return match
 
-  const standings = [...players].sort((a, b) => (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms ?? Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms ?? Number.MAX_SAFE_INTEGER)))
+  const standings = [...contestants].sort((a, b) => (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms ?? Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms ?? Number.MAX_SAFE_INTEGER)))
   const best = standings[0]
   const tied = standings[1] && Number(standings[1].correct_answers || 0) === Number(best.correct_answers || 0) && Number(standings[1].elapsed_ms || 0) === Number(best.elapsed_ms || 0)
-  const winnerId = tied ? null : best?.user_id || null
+  const winnerId = tied || best?.is_bot ? null : best?.user_id || null
+  const winnerBotId = tied || !best?.is_bot ? null : best?.id || null
   const completedAt = new Date().toISOString()
-  const { data: claimed, error: claimError } = await db.from('rival_matches').update({ status: 'completed', winner_user_id: winnerId, completed_at: completedAt }).eq('id', match.id).in('status', ['active', 'finishing']).select().maybeSingle()
+  const { data: claimed, error: claimError } = await db.from('rival_matches').update({ status: 'completed', winner_user_id: winnerId, winner_bot_id: winnerBotId, completed_at: completedAt }).eq('id', match.id).in('status', ['active', 'finishing']).select().maybeSingle()
   if (claimError) throw claimError
   if (!claimed) return getMatchRecord(db, match.id)
 
   const ratings = new Map()
-  if (match.mode === 'ranked' && players.length === 2) {
+  if (match.mode === 'ranked' && contestants.length === 2) {
     for (const player of players) ratings.set(player.user_id, Number((await ensureRivalProfile(db, player.user_id)).rating || 900))
+    for (const bot of bots) ratings.set(`practice:${bot.id}`, Number(bot.rating_before || 900))
   }
   for (const player of players) {
     const profile = await ensureRivalProfile(db, player.user_id)
     const won = winnerId === player.user_id
-    const draw = !winnerId
+    const draw = !winnerId && !winnerBotId
     let rating = Number(profile.rating || 900)
-    if (match.mode === 'ranked' && players.length === 2) {
-      const opponent = players.find(item => item.user_id !== player.user_id)
-      const expected = 1 / (1 + 10 ** ((ratings.get(opponent.user_id) - rating) / 400))
+    if (match.mode === 'ranked' && contestants.length === 2) {
+      const opponent = contestants.find(item => item.player_key !== player.user_id)
+      const expected = 1 / (1 + 10 ** ((ratings.get(opponent.player_key) - rating) / 400))
       rating = Math.max(0, Math.round(rating + 32 * ((draw ? 0.5 : won ? 1 : 0) - expected)))
     }
     const streak = won ? Number(profile.current_win_streak || 0) + 1 : 0
@@ -130,11 +168,38 @@ async function finalizeMatch(db, match) {
   return claimed
 }
 
+async function advancePracticeRival(db, match) {
+  if (!['active', 'finishing'].includes(match.status) || !match.started_at) return match
+  const bots = await getPracticeRivals(db, match.id)
+  const bot = bots[0]
+  if (!bot || bot.submitted_at) return match
+  const dueAt = new Date(match.started_at).getTime() + Number(bot.planned_elapsed_ms)
+  if (Date.now() < dueAt) return match
+  const submittedAt = new Date(dueAt).toISOString()
+  const { error } = await db.from('rival_match_bots').update({ correct_answers: bot.target_correct, elapsed_ms: bot.planned_elapsed_ms, submitted_at: submittedAt }).eq('id', bot.id).is('submitted_at', null)
+  if (error) throw error
+  if (match.status === 'active') {
+    const deadline = new Date(dueAt + 15000).toISOString()
+    const { data, error: matchError } = await db.from('rival_matches').update({ status: 'finishing', finish_deadline: deadline }).eq('id', match.id).eq('status', 'active').select().maybeSingle()
+    if (matchError) throw matchError
+    if (data) match = data
+  }
+  return match
+}
+
 async function serializeMatch(db, match, userId) {
+  match = await advancePracticeRival(db, match)
   if (match.status === 'finishing' && match.finish_deadline && new Date(match.finish_deadline) <= new Date()) match = await finalizeMatch(db, match)
-  const players = await getPlayers(db, match.id)
+  let players = await getPlayers(db, match.id)
   if (!players.some(player => player.user_id === userId)) throw Object.assign(new Error('You are not part of this battle.'), { status: 403 })
+  let bots = await getPracticeRivals(db, match.id)
+  if (['active', 'finishing'].includes(match.status) && [...players, ...bots].every(player => player.submitted_at)) {
+    match = await finalizeMatch(db, match)
+    players = await getPlayers(db, match.id)
+    bots = await getPracticeRivals(db, match.id)
+  }
   const profiles = await profileMap(db, players.map(player => player.user_id))
+  const publicPlayers = [...players.map(player => publicPlayer(player, profiles.get(player.user_id), userId)), ...bots.map(publicPracticeRival)]
   return {
     id: match.id,
     mode: match.mode,
@@ -150,10 +215,12 @@ async function serializeMatch(db, match, userId) {
     started_at: match.started_at,
     finish_deadline: match.finish_deadline,
     winner_user_id: match.winner_user_id,
+    winner_bot_id: match.winner_bot_id,
+    winner_key: match.winner_user_id || (match.winner_bot_id ? `practice:${match.winner_bot_id}` : null),
     completed_at: match.completed_at,
     is_host: match.host_user_id === userId,
     quiz: playableItems(match.quiz),
-    players: players.map(player => publicPlayer(player, profiles.get(player.user_id), userId)),
+    players: publicPlayers,
   }
 }
 
@@ -253,6 +320,49 @@ async function queueRanked(db, userId, input) {
   return { match: await serializeMatch(db, match, userId) }
 }
 
+async function addPracticeRival(db, userId, input) {
+  const match = await getMatchRecord(db, input.matchId)
+  if (match.mode !== 'ranked' || match.host_user_id !== userId) throw Object.assign(new Error('This matchmaking request is unavailable.'), { status: 403 })
+  if (match.status !== 'waiting') return { match: await serializeMatch(db, match, userId) }
+  const players = await getPlayers(db, match.id)
+  if (players.length !== 1 || players[0].user_id !== userId) return { match: await serializeMatch(db, match, userId) }
+  const { data: claimed, error: claimError } = await db.from('rival_matches').update({ status: 'generating' }).eq('id', match.id).eq('status', 'waiting').select().maybeSingle()
+  if (claimError) throw claimError
+  if (!claimed) return { match: await serializeMatch(db, await getMatchRecord(db, match.id), userId) }
+
+  try {
+    const generated = await generateRankedQuiz({ subject: claimed.subject, topic: claimed.topic }, claimed.level, claimed.difficulty, claimed.question_count)
+    const humanRating = Number(players[0].rating_before || claimed.rating_band || 900)
+    const botRating = Math.max(100, Math.min(2500, humanRating + randomBetween(-180, 180)))
+    const baseAccuracy = Math.max(.3, Math.min(.92, .38 + botRating / 3000 + (Math.random() - .5) * .32))
+    const outcomeRoll = Math.random()
+    const targetCorrect = outcomeRoll < .18
+      ? randomBetween(1, Math.max(2, Math.floor(generated.items.length * .45)))
+      : outcomeRoll > .82
+        ? randomBetween(Math.ceil(generated.items.length * .8), generated.items.length)
+        : Math.max(1, Math.min(generated.items.length, Math.round(generated.items.length * baseAccuracy)))
+    const correctSlots = new Set(generated.items.map((_, index) => index).sort(() => Math.random() - .5).slice(0, targetCorrect))
+    const answers = Object.fromEntries(generated.items.map((item, index) => [index, correctSlots.has(index) ? Number(item.correct_index) : (Number(item.correct_index) + randomBetween(1, 3)) % 4]))
+    const plannedElapsed = randomBetween(24000, 105000)
+    const { error: botError } = await db.from('rival_match_bots').insert({
+      match_id: claimed.id,
+      display_name: `${practiceNames[randomBetween(0, practiceNames.length - 1)]} ${practiceInitials[randomBetween(0, practiceInitials.length - 1)]}`,
+      rating_before: botRating,
+      target_correct: targetCorrect,
+      planned_elapsed_ms: plannedElapsed,
+      answers,
+    })
+    if (botError) throw botError
+    const startedAt = new Date().toISOString()
+    const { data: active, error: activateError } = await db.from('rival_matches').update({ title: generated.title, quiz: generated.items, question_count: generated.items.length, status: 'active', started_at: startedAt }).eq('id', claimed.id).eq('status', 'generating').select().single()
+    if (activateError) throw activateError
+    return { match: await serializeMatch(db, active, userId) }
+  } catch (error) {
+    await db.from('rival_matches').update({ status: 'cancelled' }).eq('id', claimed.id).eq('status', 'generating')
+    throw error
+  }
+}
+
 async function createFriendRoom(db, userId, input) {
   const practiceSetId = safeText(input.practiceSetId, 60)
   const { data: practiceSet, error } = await db.from('practice_sets').select('id,title,kind,items,config').eq('id', practiceSetId).eq('user_id', userId).maybeSingle()
@@ -313,6 +423,12 @@ async function submitMatch(db, userId, input) {
   const elapsed = Math.max(0, Math.min(24 * 60 * 60 * 1000, submittedAt - new Date(match.started_at || match.created_at)))
   const { error: submitError } = await db.from('rival_match_players').update({ answers, correct_answers: correct, elapsed_ms: elapsed, submitted_at: submittedAt.toISOString() }).eq('match_id', match.id).eq('user_id', userId).is('submitted_at', null)
   if (submitError) throw submitError
+  const bots = await getPracticeRivals(db, match.id)
+  if (bots[0] && !bots[0].submitted_at) {
+    const revisedFinish = Math.min(Number(bots[0].planned_elapsed_ms), elapsed + randomBetween(3000, 14000))
+    const { error: botTimingError } = await db.from('rival_match_bots').update({ planned_elapsed_ms: Math.max(5000, revisedFinish) }).eq('id', bots[0].id).is('submitted_at', null)
+    if (botTimingError) throw botTimingError
+  }
   if (match.status === 'active') {
     const deadline = new Date(submittedAt.getTime() + 15000).toISOString()
     const { data, error } = await db.from('rival_matches').update({ status: 'finishing', finish_deadline: deadline }).eq('id', match.id).eq('status', 'active').select().maybeSingle()
@@ -320,7 +436,8 @@ async function submitMatch(db, userId, input) {
     if (data) match = data
   }
   const refreshedPlayers = await getPlayers(db, match.id)
-  if (refreshedPlayers.every(item => item.submitted_at)) match = await finalizeMatch(db, match)
+  const refreshedBots = await getPracticeRivals(db, match.id)
+  if ([...refreshedPlayers, ...refreshedBots].every(item => item.submitted_at)) match = await finalizeMatch(db, match)
   return { match: await serializeMatch(db, match, userId), correct_answers: correct, total_questions: items.length }
 }
 
@@ -380,6 +497,7 @@ export default async function handler(request, response) {
       return response.status(200).json({ topics: data || [] })
     }
     if (action === 'queue_ranked') return response.status(200).json(await queueRanked(db, user.id, input))
+    if (action === 'add_practice_rival') return response.status(200).json(await addPracticeRival(db, user.id, input))
     if (action === 'get_match') {
       const match = await getMatchRecord(db, input.matchId)
       return response.status(200).json({ match: await serializeMatch(db, match, user.id) })
@@ -401,7 +519,7 @@ export default async function handler(request, response) {
     return response.status(400).json({ error: 'Unknown Rivals action.' })
   } catch (error) {
     console.error('Rivals request failed:', error)
-    const missing = ['42P01', 'PGRST205'].includes(error.code) || /rival_.*schema cache|relation .*rival_/i.test(error.message || '')
+    const missing = ['42P01', '42703', 'PGRST204', 'PGRST205'].includes(error.code) || /rival_.*schema cache|relation .*rival_|winner_bot_id/i.test(error.message || '')
     return response.status(error.status || (missing ? 503 : 500)).json({ error: missing ? 'Studentley Rivals needs its database migration before it can start.' : error.message || 'The Rivals request failed.' })
   }
 }

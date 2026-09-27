@@ -16,7 +16,6 @@ import Features from './pages/Features'
 import ResetPassword from './pages/ResetPassword'
 import PersonalAI from './pages/PersonalAI'
 import Leaderboard from './pages/Leaderboard'
-import Personalization from './pages/Personalization'
 import { Loader } from './components/UI'
 import GenerationStatus from './components/GenerationStatus'
 import SeoManager from './components/SeoManager'
@@ -63,7 +62,7 @@ export default function App() {
         <Route path="/personal-ai" element={<PersonalAI />} />
         <Route path="/ai-tutor" element={<Navigate to="/personal-ai" replace />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/personalization" element={<Personalization />} />
+        <Route path="/personalization" element={<Navigate to="/personal-ai" replace />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
