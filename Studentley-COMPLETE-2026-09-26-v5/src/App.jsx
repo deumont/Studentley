@@ -27,7 +27,10 @@ function Protected({ children }) {
   const location = useLocation()
   if (authLoading) return <Loader full label="Loading Studentley…" />
   if (!configured || !session) return <Navigate to="/login" replace state={{ from: location }} />
-  if (profile && !profile.onboarding_complete && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />
+  const loginBypassesOnboarding = sessionStorage.getItem('studentley-login-bypass-onboarding') === session.user.id
+  const onboardingRequired = !loginBypassesOnboarding && session.user?.user_metadata?.onboarding_required === true && profile?.onboarding_complete === false
+  if (onboardingRequired && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />
+  if (profile && location.pathname === '/onboarding' && !onboardingRequired) return <Navigate to="/app" replace />
   return children
 }
 

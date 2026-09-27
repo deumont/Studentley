@@ -18,7 +18,11 @@ export default function Auth() {
   const [show, setShow] = useState(false), [loading, setLoading] = useState(false), [error, setError] = useState('')
   useEffect(() => { if (path === '/signup' || path.includes('create')) setMode('signup'); else if (path.includes('forgot')) setMode('forgot'); else if (path.includes('reset')) setMode('reset'); else if (path.includes('verify')) setMode('verify'); else setMode('signin') }, [path])
   useEffect(() => { document.title = `${mode === 'signup' ? 'Create account' : mode === 'signin' ? 'Sign in' : mode === 'forgot' || mode === 'recovery-sent' ? 'Reset password' : mode === 'reset' ? 'Choose a new password' : 'Verify your email'} — Studentley` }, [mode])
-  if (session && mode !== 'reset') return <Navigate to={profile?.onboarding_complete ? '/app' : '/onboarding'} replace />
+  if (session && mode !== 'reset') {
+    const loginBypassesOnboarding = sessionStorage.getItem('studentley-login-bypass-onboarding') === session.user.id
+    const onboardingRequired = !loginBypassesOnboarding && session.user?.user_metadata?.onboarding_required === true && profile?.onboarding_complete === false
+    return <Navigate to={onboardingRequired ? '/onboarding' : '/app'} replace />
+  }
 
   const changeMode = next => { setMode(next); setError(''); navigate(next === 'signin' ? '/login' : next === 'signup' ? '/signup' : `/auth/${next}`) }
   const submit = async event => {
@@ -29,12 +33,14 @@ export default function Auth() {
         if (form.password.length < 8) throw new Error('Use at least 8 characters for your password.')
         if (form.password !== form.confirm) throw new Error('The passwords do not match.')
         if (!form.terms) throw new Error('Please accept the Terms and Privacy Policy.')
-        const { error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { emailRedirectTo: appUrl('/auth/verify'), data: { display_name: form.name, date_of_birth: form.dob, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } } })
+        const { error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { emailRedirectTo: appUrl('/auth/verify'), data: { display_name: form.name, date_of_birth: form.dob, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, onboarding_required: true } } })
         if (authError) throw authError
         setMode('verify'); navigate('/auth/verify')
       } else if (mode === 'signin') {
-        const { error: authError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
+        const { data: signedIn, error: authError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
         if (authError) throw authError
+        sessionStorage.setItem('studentley-login-bypass-onboarding', signedIn.user.id)
+        if (signedIn.user?.user_metadata?.onboarding_required === true) await supabase.auth.updateUser({ data: { ...signedIn.user.user_metadata, onboarding_required: false } })
       } else if (mode === 'forgot') {
         const { error: authError } = await supabase.auth.resetPasswordForEmail(form.email, { redirectTo: appUrl('/reset-password') })
         if (authError) throw authError

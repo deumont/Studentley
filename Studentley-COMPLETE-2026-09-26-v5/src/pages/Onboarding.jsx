@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, BookOpen, CalendarDays, Check, Clock3, Flag, Gra
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { createRecord, saveProfile } from '../lib/data'
+import { supabase } from '../lib/supabase'
 import { Button, ErrorState, Field } from '../components/UI'
 
 const schoolSystems = ['IGCSE', 'GCSE', 'IB', 'A-Level', 'Abitur', 'AP', 'Other']
@@ -25,6 +26,7 @@ export default function Onboarding() {
     try {
       await saveProfile(user.id, { display_name: form.name.trim(), grade_year: form.grade, school_system: form.system, daily_study_minutes: studyMinutes[form.daily] ?? 45, preferred_study_time: form.preferred.toLowerCase(), goals: form.goals, onboarding_complete: true })
       await Promise.all(form.subjects.map((name, index) => createRecord('subjects', { user_id: user.id, name, color: colors[index % colors.length], icon: 'book' })))
+      await supabase.auth.updateUser({ data: { ...(user.user_metadata || {}), onboarding_required: false } })
       await refresh(); setStep(4)
     } catch (value) { setError(value.message || 'We could not save your setup.') }
     finally { setSaving(false) }
