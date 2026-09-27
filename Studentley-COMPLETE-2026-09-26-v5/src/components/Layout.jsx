@@ -4,7 +4,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { markNotificationsRead } from '../lib/data'
 import { supabase } from '../lib/supabase'
-import { formatDate } from './UI'
+import { formatDate, ProfileAvatar } from './UI'
 
 const links = [
   ['/app', Home, 'Home'], ['/upload', FileUp, 'Upload Document'], ['/study-plan', CalendarDays, 'Study Plan'],
@@ -12,7 +12,7 @@ const links = [
 ]
 
 export default function Layout() {
-  const { profile, data, refresh, notify } = useApp()
+  const { user, profile, data, refresh, notify } = useApp()
   const [mobile, setMobile] = useState(false), [account, setAccount] = useState(false), [notifications, setNotifications] = useState(false)
   const navigate = useNavigate(), menuRef = useRef()
   const name = profile?.display_name || 'Student'
@@ -30,7 +30,7 @@ export default function Layout() {
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobile(true)} aria-label="Open navigation"><Menu /></button><div className="topbar-space" />
         <div className="notification-wrap"><button className="icon-button" onClick={openNotifications} aria-label={`${unread.length} unread notifications`}><Bell />{unread.length > 0 && <em>{unread.length}</em>}</button>{notifications && <div className="popover notifications"><h3>Notifications</h3>{data?.notifications?.length ? data.notifications.slice(0, 6).map(item => <div className="notification-item" key={item.id}><span className={`notice-dot ${item.kind || 'info'}`} /><div><b>{item.title}</b><p>{item.body}</p><small>{formatDate(item.created_at, { hour: 'numeric', minute: '2-digit' })}</small></div></div>) : <p className="popover-empty">You’re all caught up.</p>}</div>}</div>
-        <div className="account-wrap" ref={menuRef}><button className="account-button" onClick={() => setAccount(value => !value)}><span className="avatar">{name.split(' ').slice(0, 2).map(part => part[0]).join('').toUpperCase()}</span><span><b>{name}</b><small>{profile?.grade_year || 'Student'}</small></span><ChevronDown /></button>{account && <div className="popover account-menu"><button onClick={() => navigate('/settings')}>Profile & settings</button><button onClick={() => navigate('/plans')}>Plans & billing</button><button className="danger-text" onClick={() => supabase.auth.signOut()}>Sign out</button></div>}</div>
+        <div className="account-wrap" ref={menuRef}><button className="account-button" onClick={() => setAccount(value => !value)}><ProfileAvatar user={user} name={name} /><span><b>{name}</b><small>{profile?.grade_year || 'Student'}</small></span><ChevronDown /></button>{account && <div className="popover account-menu"><button onClick={() => navigate('/settings')}>Profile & settings</button><button onClick={() => navigate('/plans')}>Plans & billing</button><button className="danger-text" onClick={() => supabase.auth.signOut()}>Sign out</button></div>}</div>
       </header>
       <div className="page"><Outlet /></div>
     </main>

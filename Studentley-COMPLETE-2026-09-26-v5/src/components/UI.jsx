@@ -1,6 +1,7 @@
-import React, { useEffect } from 'react'
+import React, { useEffect, useState } from 'react'
 import { AlertCircle, Crown, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
+import { profilePictureUrl } from '../lib/data'
 
 export function Button({ variant = 'primary', className = '', loading, children, ...props }) {
   return <button className={`button ${variant} ${className}`} disabled={loading || props.disabled} {...props}>{loading && <LoaderCircle className="spin" size={17} />}{children}</button>
@@ -12,6 +13,19 @@ export function PageHeading({ eyebrow, title, text, actions }) {
 
 export function EmptyState({ icon: Icon = Sparkles, title, text, children, compact = false }) {
   return <div className={`empty-state ${compact ? 'compact' : ''}`}><span className="icon-bubble blue"><Icon /></span><h3>{title}</h3><p>{text}</p>{children}</div>
+}
+
+export function ProfileAvatar({ user, name = 'Student', className = '' }) {
+  const path = user?.user_metadata?.avatar_path || ''
+  const [url, setUrl] = useState('')
+  useEffect(() => {
+    let current = true
+    setUrl('')
+    if (path) profilePictureUrl(path).then(value => current && setUrl(value)).catch(() => {})
+    return () => { current = false }
+  }, [path])
+  const initials = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'S'
+  return <span className={`avatar ${url ? 'has-image' : ''} ${className}`}>{url ? <img src={url} alt={`${name}'s profile`} /> : initials}</span>
 }
 
 export function Modal({ title, description, onClose, children, wide = false }) {

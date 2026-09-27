@@ -16,6 +16,7 @@ import ResetPassword from './pages/ResetPassword'
 import AiTutor from './pages/AiTutor'
 import Leaderboard from './pages/Leaderboard'
 import { Loader } from './components/UI'
+import GenerationStatus from './components/GenerationStatus'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile } = useApp()
@@ -51,6 +52,7 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
+    <GenerationStatus />
     {notice && <div className={`toast ${notice.type}`} role="status">{notice.type === 'error' ? '!' : '✓'} {notice.text}</div>}
   </>
 }

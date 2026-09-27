@@ -21,7 +21,7 @@ function safeText(value) {
     .replace(/×/g, 'x')
     .replace(/÷/g, '/')
     .replace(/•/g, '-')
-    .replace(/[^\x20-\x7E\xA0-\xFF]/g, '?')
+    .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '?')
 }
 
 function wrapText(text, font, size, width) {
@@ -182,6 +182,15 @@ function drawWordBank(page, fonts, options, y) {
   return y - height - 5
 }
 
+function drawSourceContext(page, fonts, text, x, y, width) {
+  const lines = wrapText(text, fonts.regular, 8.7, width - 24)
+  const height = lines.length * 12 + 30
+  page.drawRectangle({ x, y: y - height, width, height, color: rgb(0.975, 0.985, 1), borderColor: line, borderWidth: 0.7 })
+  page.drawText('SOURCE / CONTEXT', { x: x + 12, y: y - 15, font: fonts.bold, size: 7, color: blue })
+  lines.forEach((entry, index) => page.drawText(entry, { x: x + 12, y: y - 29 - index * 12, font: fonts.regular, size: 8.7, color: ink }))
+  return y - height
+}
+
 function drawMatching(page, fonts, item, y) {
   const left = (item.matching_left || []).slice(0, 8)
   const right = (item.matching_right || []).slice(0, left.length)
@@ -281,7 +290,9 @@ function drawQuestionPaper(pdf, fonts, exam) {
           : questionType === 'classification' ? 42 + Math.min(item.options?.length || 0, 7) * 31
             : questionType === 'fill_blank' || questionType === 'label_diagram' ? 55 : 0
     const diagramHeight = item.diagram_type && item.diagram_type !== 'none' ? 150 : 0
-    ensure(Math.min(700, 90 + formatHeight + diagramHeight + estimatedLines * 22 + (nextSection !== section ? 42 : 0)))
+    const contextWidth = A4[0] - MARGIN * 2 - 65
+    const contextHeight = item.context ? wrapText(item.context, fonts.regular, 8.7, contextWidth - 24).length * 12 + 36 : 0
+    ensure(Math.min(700, 90 + contextHeight + formatHeight + diagramHeight + estimatedLines * 22 + (nextSection !== section ? 42 : 0)))
     if (nextSection !== section) {
       ensure(48)
       page.drawRectangle({ x: MARGIN, y: y - 24, width: A4[0] - MARGIN * 2, height: 28, color: paleBlue })
@@ -295,7 +306,7 @@ function drawQuestionPaper(pdf, fonts, exam) {
     const marks = `[${Number(item.marks) || 1}]`
     page.drawText(marks, { x: A4[0] - MARGIN - fonts.bold.widthOfTextAtSize(marks, 9), y, font: fonts.bold, size: 9, color: ink })
     let contentY = y
-    if (item.context) contentY = drawWrapped(page, item.context, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.oblique, size: 9, lineHeight: 13, color: muted }) - 4
+    if (item.context) contentY = drawSourceContext(page, fonts, item.context, MARGIN + 34, contentY, A4[0] - MARGIN * 2 - 65) - 16
     const prompt = questionType === 'fill_blank' ? safeText(item.prompt).replace(/\[blank\]/gi, '____________') : item.prompt
     contentY = drawWrapped(page, prompt, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.regular, size: 10, lineHeight: 14 })
     y = contentY - 8

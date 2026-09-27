@@ -106,6 +106,43 @@ export async function submitPracticeResult(practiceSetId, answers) {
   return data
 }
 
+export async function uploadProfilePicture({ userId, file }) {
+  const extensions = { 'image/jpeg': 'jpg', 'image/png': 'png' }
+  if (!extensions[file?.type]) throw new Error('Choose a JPG or PNG image.')
+  if (file.size > 5 * 1024 * 1024) throw new Error('Profile pictures must be 5 MB or smaller.')
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError || !userData.user) throw userError || new Error('Your session expired. Please sign in again.')
+  const previousPath = userData.user.user_metadata?.avatar_path || ''
+  const storagePath = `${userId}/profile/${crypto.randomUUID()}.${extensions[file.type]}`
+  const { error: uploadError } = await supabase.storage.from('documents').upload(storagePath, file, { contentType: file.type, cacheControl: '3600' })
+  if (uploadError) throw uploadError
+  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: storagePath }
+  const { error: metadataError } = await supabase.auth.updateUser({ data: metadata })
+  if (metadataError) {
+    await supabase.storage.from('documents').remove([storagePath])
+    throw metadataError
+  }
+  if (previousPath && previousPath !== storagePath) await supabase.storage.from('documents').remove([previousPath])
+  return storagePath
+}
+
+export async function removeProfilePicture() {
+  const { data: userData, error: userError } = await supabase.auth.getUser()
+  if (userError || !userData.user) throw userError || new Error('Your session expired. Please sign in again.')
+  const previousPath = userData.user.user_metadata?.avatar_path || ''
+  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: null }
+  const { error: metadataError } = await supabase.auth.updateUser({ data: metadata })
+  if (metadataError) throw metadataError
+  if (previousPath) await supabase.storage.from('documents').remove([previousPath])
+}
+
+export async function profilePictureUrl(storagePath) {
+  if (!storagePath) return ''
+  const { data, error } = await supabase.storage.from('documents').createSignedUrl(storagePath, 60 * 60 * 6)
+  if (error) throw error
+  return data.signedUrl
+}
+
 export async function submitMockExamResult(practiceSetId, scorePercent) {
   const { data } = await supabase.auth.getSession()
   const response = await fetch('/api/mock-result', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` }, body: JSON.stringify({ practiceSetId, scorePercent }) })
