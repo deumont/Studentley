@@ -165,10 +165,7 @@ export async function profilePictureUrl(storagePath, bucket = 'documents') {
 
 export async function loadDocumentAiResults() {
   const { data, error } = await supabase.from('document_ai_results').select('*').order('updated_at', { ascending: false })
-  if (error) {
-    if (['42P01', 'PGRST205'].includes(error.code) || /schema cache|does not exist/i.test(error.message || '')) return []
-    throw error
-  }
+  if (error) throw error
   return data || []
 }
 

@@ -1,8 +1,10 @@
 import React, { useEffect, useState } from 'react'
-import { Check, LoaderCircle, XCircle } from 'lucide-react'
-import { subscribeAIActivity } from '../services/ai'
+import { ArrowRight, Check, LoaderCircle, XCircle } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { dismissAIActivity, subscribeAIActivity } from '../services/ai'
 
 export default function GenerationStatus() {
+  const navigate = useNavigate()
   const [activities, setActivities] = useState([])
   const [, setTick] = useState(0)
 
@@ -19,7 +21,8 @@ export default function GenerationStatus() {
       const seconds = Math.max(0, Math.floor(((activity.finishedAt || Date.now()) - activity.startedAt) / 1000))
       return <div className={`generation-popup ${activity.status}`} key={activity.id}>
         <span className="generation-status-icon">{activity.status === 'running' ? <LoaderCircle className="spin" /> : activity.status === 'complete' ? <Check /> : <XCircle />}</span>
-        <span><b>{activity.status === 'running' ? activity.label : activity.status === 'complete' ? `${activity.label} complete` : `${activity.label} failed`}</b><small>{activity.status === 'running' ? `${seconds}s · You can keep using Studentley.` : activity.status === 'complete' ? `Finished in ${seconds}s.` : activity.message}</small></span>
+        <span className="generation-copy"><b>{activity.status === 'running' ? activity.label : activity.status === 'complete' ? `${activity.label} complete` : `${activity.label} failed`}</b><small>{activity.status === 'running' ? `${seconds}s · You can keep using Studentley.` : activity.status === 'complete' ? `Finished in ${seconds}s.` : activity.message}</small></span>
+        {activity.status === 'complete' && activity.target && <button className="generation-view" onClick={() => { dismissAIActivity(activity.id); navigate(activity.target.path, { state: activity.target.state }) }}>View <ArrowRight /></button>}
       </div>
     })}
   </aside>

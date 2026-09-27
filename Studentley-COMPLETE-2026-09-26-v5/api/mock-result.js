@@ -17,9 +17,9 @@ export default async function handler(request, response) {
     const { data: practiceSet, error: setError } = await db.from('practice_sets').select('id,kind').eq('id', practiceSetId).eq('user_id', user.id).maybeSingle()
     if (setError) throw setError
     if (!practiceSet || practiceSet.kind !== 'mock_exam') return response.status(404).json({ error: 'Mock exam not found.' })
-    const { data: existing, error: existingError } = await db.from('practice_results').select('id').eq('practice_set_id', practiceSetId).eq('user_id', user.id).order('completed_at', { ascending: false }).limit(1).maybeSingle()
+    const { data: existing, error: existingError } = await db.from('practice_results').select('id,answers').eq('practice_set_id', practiceSetId).eq('user_id', user.id).order('completed_at', { ascending: false }).limit(1).maybeSingle()
     if (existingError) throw existingError
-    const payload = { score_percent: scorePercent, answers: { self_reported_written_exam: true }, completed_at: new Date().toISOString() }
+    const payload = { score_percent: scorePercent, answers: { ...(existing?.answers || {}), self_reported_written_exam: true }, completed_at: new Date().toISOString() }
     const query = existing
       ? db.from('practice_results').update(payload).eq('id', existing.id).eq('user_id', user.id)
       : db.from('practice_results').insert({ user_id: user.id, practice_set_id: practiceSetId, ...payload })

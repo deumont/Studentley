@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Send, Sparkles, Trash2, UserRoundCog } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { askPersonalAssistant } from '../services/ai'
 import { Button, PageHeading } from '../components/UI'
@@ -31,6 +31,7 @@ const loadConversation = userId => {
 }
 
 export default function PersonalAI() {
+  const location = useLocation(), navigate = useNavigate()
   const { data, profile, refresh, user } = useApp()
   const documents = data?.documents || []
   const subjects = data?.subjects?.filter(item => !item.archived_at) || []
@@ -56,6 +57,20 @@ export default function PersonalAI() {
     if (!user?.id || conversationUser.current !== user.id) return
     try { localStorage.setItem(conversationKey(user.id), JSON.stringify(messages.slice(-60))) } catch { /* Browser storage can be unavailable in private mode. */ }
   }, [messages, user?.id])
+  useEffect(() => {
+    const generated = location.state?.generatedAssistantResult
+    if (!generated?.answer) return
+    setMessages(items => {
+      if (items.some(message => message.role === 'assistant' && message.text === generated.answer)) return items
+      const next = [...items]
+      const questionText = String(location.state?.generatedQuestion || '').trim()
+      if (questionText && !next.some(message => message.role === 'user' && message.text === questionText)) next.push({ role: 'user', text: questionText })
+      next.push({ role: 'assistant', text: generated.answer, sources: generated.sources || [], actions: generated.created || [] })
+      return next
+    })
+    if (generated.created?.length) refresh()
+    navigate('/personal-ai', { replace: true })
+  }, [location.state, navigate, refresh])
 
   const send = async event => {
     event?.preventDefault()

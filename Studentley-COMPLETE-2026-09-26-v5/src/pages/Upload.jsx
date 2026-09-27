@@ -1,5 +1,6 @@
 import React, { Fragment, useEffect, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Download, File, FileText, FolderOpen, Image, MoreVertical, Search, Sparkles, Trash2, UploadCloud, WandSparkles } from 'lucide-react'
+import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { deleteDocument, loadDocumentAiResults, openDocument, uploadDocument } from '../lib/data'
 import { analyzeDocument, analyzeTimetable, extractExamSchedule, generateSummary } from '../services/ai'
@@ -8,6 +9,7 @@ import { Button, EmptyState, Field, Modal, PageHeading, formatDate } from '../co
 const size = bytes => bytes < 1024 * 1024 ? `${Math.max(1, Math.round(bytes / 1024))} KB` : `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
 export default function Upload() {
+  const location = useLocation(), navigate = useNavigate()
   const { user, data, refresh, notify, update } = useApp()
   const [dragging, setDragging] = useState(false), [progress, setProgress] = useState(null), [subjectId, setSubjectId] = useState(''), [category, setCategory] = useState('study_material'), [query, setQuery] = useState(''), [ai, setAi] = useState(null), [editing, setEditing] = useState(null)
   const [aiResults, setAiResults] = useState([]), [expandedResult, setExpandedResult] = useState('')
@@ -16,6 +18,15 @@ export default function Upload() {
   const visible = documents.filter(item => item.name.toLowerCase().includes(query.toLowerCase()))
   const loadResults = async () => { try { setAiResults(await loadDocumentAiResults()) } catch (error) { notify(error.message || 'Saved document results could not be loaded.', 'error') } }
   useEffect(() => { loadResults() }, [])
+  useEffect(() => {
+    const target = location.state?.openDocumentResult
+    if (!target || !aiResults.length) return
+    const saved = aiResults.find(item => item.document_id === target.documentId && item.operation === target.operation)
+    if (!saved) return
+    setExpandedResult(saved.id)
+    navigate('/upload', { replace: true })
+    requestAnimationFrame(() => document.getElementById(`document-result-${saved.id}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
+  }, [aiResults, location.state, navigate])
   const selectFiles = async files => {
     const list = [...files]; if (!list.length) return
     for (const file of list) {
@@ -45,7 +56,8 @@ export default function Upload() {
 
 function SavedDocumentResult({ saved, expanded, onToggle }) {
   const result = saved.result || {}
-  return <div className={`document-insight ${expanded ? 'expanded' : ''}`}><span className="document-insight-icon"><Sparkles /></span><div><div className="document-insight-heading"><span><b>{saved.operation === 'summary' ? 'Saved summary' : 'Saved analysis'} · {result.title || 'AI result'}</b><small>{formatDate(saved.updated_at, { hour: 'numeric', minute: '2-digit' })}</small></span><button onClick={onToggle}>{expanded ? 'Hide details' : 'View details'}{expanded ? <ChevronUp /> : <ChevronDown />}</button></div><p>{result.summary}</p>{expanded && <div className="document-insight-details">{result.key_points?.length > 0 && <section><h4>Key points</h4><ul>{result.key_points.map(point => <li key={point}>{point}</li>)}</ul></section>}{result.topics?.length > 0 && <p className="ai-tags">{result.topics.map(topic => <span key={topic}>{topic}</span>)}</p>}{result.review_questions?.length > 0 && <section><h4>Review questions</h4><ol>{result.review_questions.map(question => <li key={question}>{question}</li>)}</ol></section>}</div>}</div></div>
+  const toggleFromKeyboard = event => { if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); onToggle() } }
+  return <div id={`document-result-${saved.id}`} className={`document-insight ${expanded ? 'expanded' : ''}`} role="button" tabIndex={0} aria-expanded={expanded} onClick={onToggle} onKeyDown={toggleFromKeyboard}><span className="document-insight-icon"><Sparkles /></span><div><div className="document-insight-heading"><span><b>{saved.operation === 'summary' ? 'Saved summary' : 'Saved analysis'} · {result.title || 'AI result'}</b><small>{formatDate(saved.updated_at, { hour: 'numeric', minute: '2-digit' })}</small></span><span className="document-insight-toggle">{expanded ? 'Hide details' : 'View details'}{expanded ? <ChevronUp /> : <ChevronDown />}</span></div><p>{result.summary}</p>{expanded && <div className="document-insight-details">{result.key_points?.length > 0 && <section><h4>Key points</h4><ul>{result.key_points.map(point => <li key={point}>{point}</li>)}</ul></section>}{result.topics?.length > 0 && <p className="ai-tags">{result.topics.map(topic => <span key={topic}>{topic}</span>)}</p>}{result.review_questions?.length > 0 && <section><h4>Review questions</h4><ol>{result.review_questions.map(question => <li key={question}>{question}</li>)}</ol></section>}</div>}</div></div>
 }
 
 function DocumentAnalysisModal({ documents, initialDocumentId, onClose, onComplete }) {
