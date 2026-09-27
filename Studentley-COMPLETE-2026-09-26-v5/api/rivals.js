@@ -345,7 +345,7 @@ async function addPracticeRival(db, userId, input) {
         : Math.max(1, Math.min(generated.items.length, Math.round(generated.items.length * baseAccuracy)))
     const correctSlots = new Set(generated.items.map((_, index) => index).sort(() => Math.random() - .5).slice(0, targetCorrect))
     const answers = Object.fromEntries(generated.items.map((item, index) => [index, correctSlots.has(index) ? Number(item.correct_index) : (Number(item.correct_index) + randomBetween(1, 3)) % 4]))
-    const plannedElapsed = randomBetween(28000, 110000)
+    const plannedElapsed = randomBetween(32000, 115000)
     const { error: botError } = await db.from('rival_match_bots').insert({
       match_id: claimed.id,
       display_name: `${practiceNames[randomBetween(0, practiceNames.length - 1)]} ${practiceInitials[randomBetween(0, practiceInitials.length - 1)]}`,
@@ -428,7 +428,7 @@ async function submitMatch(db, userId, input) {
   if (submitError) throw submitError
   const bots = await getPracticeRivals(db, match.id)
   if (bots[0] && !bots[0].submitted_at) {
-    const revisedFinish = Math.min(Number(bots[0].planned_elapsed_ms), elapsed + randomBetween(5000, 16000))
+    const revisedFinish = Math.min(Number(bots[0].planned_elapsed_ms), elapsed + randomBetween(6000, 17000))
     const { error: botTimingError } = await db.from('rival_match_bots').update({ planned_elapsed_ms: Math.max(5000, revisedFinish) }).eq('id', bots[0].id).is('submitted_at', null)
     if (botTimingError) throw botTimingError
   }
