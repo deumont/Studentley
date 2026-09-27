@@ -20,22 +20,42 @@ const welcome = {
 
 const actionIcons = { study_session: CalendarPlus, task: ListPlus, exam: CalendarCheck2, subject: BookOpen }
 
+const conversationKey = userId => `studentley-personal-ai-conversation-${userId}`
+const loadConversation = userId => {
+  if (!userId) return [welcome]
+  try {
+    const stored = JSON.parse(localStorage.getItem(conversationKey(userId)))
+    const valid = Array.isArray(stored) ? stored.filter(message => ['user', 'assistant'].includes(message?.role) && typeof message?.text === 'string').slice(-60) : []
+    return valid.length ? valid : [welcome]
+  } catch { return [welcome] }
+}
+
 export default function PersonalAI() {
-  const { data, profile, refresh } = useApp()
+  const { data, profile, refresh, user } = useApp()
   const documents = data?.documents || []
   const subjects = data?.subjects?.filter(item => !item.archived_at) || []
   const [subjectId, setSubjectId] = useState('')
   const [documentId, setDocumentId] = useState('')
   const [question, setQuestion] = useState('')
   const [sending, setSending] = useState(false)
-  const [messages, setMessages] = useState([welcome])
+  const [messages, setMessages] = useState(() => loadConversation(user?.id))
   const endRef = useRef(null)
+  const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
   const studioConnected = currentPlan === 'pro'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
 
   useEffect(() => { document.title = 'Personal AI — Studentley' }, [])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => {
+    if (!user?.id || conversationUser.current === user.id) return
+    conversationUser.current = user.id
+    setMessages(loadConversation(user.id))
+  }, [user?.id])
+  useEffect(() => {
+    if (!user?.id || conversationUser.current !== user.id) return
+    try { localStorage.setItem(conversationKey(user.id), JSON.stringify(messages.slice(-60))) } catch { /* Browser storage can be unavailable in private mode. */ }
+  }, [messages, user?.id])
 
   const send = async event => {
     event?.preventDefault()
@@ -54,7 +74,7 @@ export default function PersonalAI() {
     } finally { setSending(false) }
   }
 
-  const reset = () => { setMessages([welcome]); setQuestion('') }
+  const reset = () => { if (user?.id) localStorage.removeItem(conversationKey(user.id)); setMessages([welcome]); setQuestion('') }
 
   return <>
     <PageHeading eyebrow="Personal AI" title="Your AI, shaped around your life" text="Ask for help or tell it to add study sessions, tasks, exams and subjects directly to your Studentley workspace." />
@@ -82,7 +102,7 @@ export default function PersonalAI() {
           <div ref={endRef} />
         </div>
         <form className="tutor-composer" onSubmit={send}><textarea rows="2" value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send() } }} placeholder="Ask for help or tell your AI what to add…" /><Button loading={sending} disabled={!question.trim()} aria-label="Send request"><Send /></Button></form>
-        <footer>Your AI can make mistakes. Check important details and dates in your plan.</footer>
+        <footer>Conversation saved in this browser. Your AI can make mistakes, so check important details and dates.</footer>
       </section>
     </div>
   </>
