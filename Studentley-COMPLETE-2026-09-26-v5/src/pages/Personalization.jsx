@@ -28,16 +28,16 @@ export default function Personalization() {
     } catch (problem) { setError(problem.message || 'Your personalization settings could not be loaded.') }
     finally { setLoading(false) }
   }
-  useEffect(() => { document.title = 'Pro Personalization — Studentley'; load() }, [isPro])
+  useEffect(() => { document.title = 'Studio — Studentley'; load() }, [isPro])
 
   if (!isPro) return <>
-    <PageHeading eyebrow="Pro exclusive" title="A study experience built around you" text="Personal routines and intelligent study reminders are reserved for Pro members." />
-    <section className="card pro-locked-page"><span className="pro-lock-orb"><Lock /></span><span className="pro-exclusive-label"><Crown /> Studentley Pro</span><h2>Unlock Personalization Studio</h2><p>Tell Studentley how you learn and when your real life happens. AI plans and tutor answers can then fit around school, sleep, sport, travel and your personal goals.</p><div className="pro-feature-grid"><article><BrainCircuit /><b>Personal AI context</b><small>Adapt explanations, pacing and methods.</small></article><article><Clock3 /><b>Real-life schedule</b><small>Keep study sessions out of busy hours.</small></article><article><Bell /><b>Study reminders</b><small>Get reminded before planned sessions.</small></article></div><Link className="button violet" to="/plans"><Crown /> View Pro plan</Link></section>
+    <PageHeading eyebrow="Pro Studio" title="A study experience built around you" text="Personal routines and intelligent study reminders are reserved for Pro members." />
+    <section className="card pro-locked-page"><span className="pro-lock-orb"><Crown /></span><span className="pro-exclusive-label"><Crown /> Studentley Pro</span><h2>Unlock Studio</h2><p>Tell Studentley how you learn and when your real life happens. AI plans and tutor answers can then fit around school, sleep, sport, travel and your personal goals.</p><div className="pro-feature-grid"><article><BrainCircuit /><b>Personal AI context</b><small>Adapt explanations, pacing and methods.</small></article><article><Clock3 /><b>Real-life schedule</b><small>Keep study sessions out of busy hours.</small></article><article><Bell /><b>Study reminders</b><small>Get reminded before planned sessions.</small></article></div><Link className="button violet" to="/plans"><Crown /> View Pro plan</Link></section>
   </>
 
   if (loading) return <Loader label="Loading your Pro personalization…" />
   return <>
-    <PageHeading eyebrow="Pro exclusive" title="Personalization Studio" text="Give Studentley the context it needs to adapt your plans, explanations and reminders to your real life." actions={<span className="pro-page-badge"><Crown /> Pro unlocked</span>} />
+    <PageHeading eyebrow="Pro exclusive" title="Studio" text="Give Studentley the context it needs to adapt your plans, explanations and reminders to your real life." actions={<span className="pro-page-badge"><Crown /> Pro</span>} />
     {error && <ErrorState text={error} />}
     {migrationRequired && <ErrorState text="The Pro personalization database update still needs to be applied before this page can save changes." />}
     <div className="personalization-grid">

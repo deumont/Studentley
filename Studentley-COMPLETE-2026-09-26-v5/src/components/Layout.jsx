@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, BrainCircuit, CalendarDays, ChevronDown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Trophy, X } from 'lucide-react'
-import { NavLink, Outlet, useNavigate } from 'react-router-dom'
+import { Bell, Bot, BrainCircuit, CalendarDays, ChevronDown, Crown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Trophy, X } from 'lucide-react'
+import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { markNotificationsRead } from '../lib/data'
 import { supabase } from '../lib/supabase'
@@ -8,7 +8,7 @@ import { formatDate, ProfileAvatar } from './UI'
 
 const links = [
   ['/app', Home, 'Home'], ['/upload', FileUp, 'Upload Document'], ['/study-plan', CalendarDays, 'Study Plan'],
-  ['/practice', GraduationCap, 'Practice & Exams'], ['/ai-tutor', Bot, 'AI Tutor'], ['/leaderboard', Trophy, 'Leaderboard'], ['/personalization', BrainCircuit, 'Personalization', true], ['/settings', Settings, 'Settings'],
+  ['/practice', GraduationCap, 'Practice & Exams'], ['/leaderboard', Trophy, 'Leaderboard'], ['/personalization', BrainCircuit, 'Studio', true], ['/settings', Settings, 'Settings'],
 ]
 
 export default function Layout() {
@@ -24,7 +24,7 @@ export default function Layout() {
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
       <div className="sidebar-top"><NavLink to="/app" className="brand" onClick={() => setMobile(false)}><span>S</span><b>Studentley</b></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{label}</span>{proOnly && <em className={profile?.subscription_plan === 'pro' ? 'unlocked' : ''}>{profile?.subscription_plan === 'pro' ? 'PRO' : 'LOCKED'}</em>}</NavLink>)}</nav>
+      <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{label}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label="Requires Pro" />}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>Small steps every day lead to big results.</p></div>
     </aside>
     <main className="main-area">
@@ -34,5 +34,45 @@ export default function Layout() {
       </header>
       <div className="page"><Outlet /></div>
     </main>
+    <FloatingTutorButton />
   </div>
+}
+
+function FloatingTutorButton() {
+  const navigate = useNavigate(), location = useLocation(), buttonRef = useRef(), drag = useRef(null), ignoreClick = useRef(false)
+  const [position, setPosition] = useState(() => {
+    try { const value = JSON.parse(localStorage.getItem('studentley-tutor-position')); return Number.isFinite(value?.x) && Number.isFinite(value?.y) ? value : null } catch { return null }
+  })
+  const clamp = value => ({ x: Math.max(10, Math.min(value.x, window.innerWidth - 68)), y: Math.max(76, Math.min(value.y, window.innerHeight - 68)) })
+  useEffect(() => {
+    const resize = () => setPosition(value => value ? clamp(value) : value)
+    resize()
+    window.addEventListener('resize', resize)
+    return () => window.removeEventListener('resize', resize)
+  }, [])
+  if (location.pathname === '/ai-tutor') return null
+  const pointerDown = event => {
+    if (event.button !== 0) return
+    const rect = buttonRef.current.getBoundingClientRect()
+    drag.current = { pointerId: event.pointerId, offsetX: event.clientX - rect.left, offsetY: event.clientY - rect.top, startX: event.clientX, startY: event.clientY, moved: false }
+    event.currentTarget.setPointerCapture(event.pointerId)
+  }
+  const pointerMove = event => {
+    if (!drag.current || drag.current.pointerId !== event.pointerId) return
+    if (Math.hypot(event.clientX - drag.current.startX, event.clientY - drag.current.startY) > 4) drag.current.moved = true
+    if (drag.current.moved) setPosition(clamp({ x: event.clientX - drag.current.offsetX, y: event.clientY - drag.current.offsetY }))
+  }
+  const pointerUp = event => {
+    if (!drag.current || drag.current.pointerId !== event.pointerId) return
+    const moved = drag.current.moved
+    drag.current = null
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+    ignoreClick.current = moved
+    if (moved) {
+      setPosition(value => { if (value) localStorage.setItem('studentley-tutor-position', JSON.stringify(value)); return value })
+      setTimeout(() => { ignoreClick.current = false }, 0)
+    }
+  }
+  const open = () => { if (ignoreClick.current) { ignoreClick.current = false; return } navigate('/ai-tutor') }
+  return <button ref={buttonRef} className="floating-tutor" style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined} onClick={open} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { drag.current = null }} aria-label="Open AI Tutor. Drag to reposition." title="AI Tutor — drag to move, click to open"><Bot /><span><Sparkles /></span></button>
 }
