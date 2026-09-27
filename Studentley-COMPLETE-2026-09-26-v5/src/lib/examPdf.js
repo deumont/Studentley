@@ -8,6 +8,7 @@ const muted = rgb(0.35, 0.4, 0.49)
 const line = rgb(0.73, 0.76, 0.81)
 const blue = rgb(0.12, 0.43, 0.91)
 const paleBlue = rgb(0.93, 0.96, 1)
+const noGenericAnswerLineTypes = new Set(['multiple_choice', 'matching', 'fill_blank', 'table_completion', 'classification', 'label_diagram'])
 
 function safeText(value) {
   return String(value ?? '')
@@ -127,31 +128,139 @@ function drawDiagram(page, item, x, y, width, fonts) {
   const height = 128
   page.drawRectangle({ x, y: y - height, width, height, borderColor: line, borderWidth: 0.8 })
   const type = item.diagram_type
-  const labels = (item.diagram_labels || []).map(safeText)
+  const labels = item.question_type === 'label_diagram' ? [] : (item.diagram_labels || []).map(safeText)
+  let labelTargets = []
   if (type === 'coordinate_grid') {
     for (let index = 1; index < 10; index += 1) page.drawLine({ start: { x: x + index * width / 10, y: y - 8 }, end: { x: x + index * width / 10, y: y - height + 8 }, thickness: 0.25, color: line })
     for (let index = 1; index < 6; index += 1) page.drawLine({ start: { x: x + 8, y: y - index * height / 6 }, end: { x: x + width - 8, y: y - index * height / 6 }, thickness: 0.25, color: line })
     page.drawLine({ start: { x: x + width / 2, y: y - 7 }, end: { x: x + width / 2, y: y - height + 7 }, thickness: 0.8, color: ink })
     page.drawLine({ start: { x: x + 7, y: y - height / 2 }, end: { x: x + width - 7, y: y - height / 2 }, thickness: 0.8, color: ink })
+    labelTargets = [{ x: x + width / 2, y: y - 15 }, { x: x + width - 18, y: y - height / 2 }, { x: x + width / 2 + 35, y: y - height / 2 - 35 }]
   } else if (type === 'triangle') {
     const points = [{ x: x + width / 2, y: y - 18 }, { x: x + 55, y: y - height + 36 }, { x: x + width - 55, y: y - height + 36 }]
     page.drawLine({ start: points[0], end: points[1], thickness: 1.2, color: ink }); page.drawLine({ start: points[1], end: points[2], thickness: 1.2, color: ink }); page.drawLine({ start: points[2], end: points[0], thickness: 1.2, color: ink })
-    points.forEach((point, index) => page.drawText(labels[index] || ['A', 'B', 'C'][index], { x: point.x + (index === 0 ? -3 : index === 1 ? -12 : 5), y: point.y + (index === 0 ? 5 : -12), font: fonts.bold, size: 9, color: ink }))
+    points.forEach((point, index) => page.drawText(item.question_type === 'label_diagram' ? '' : labels[index] || ['A', 'B', 'C'][index], { x: point.x + (index === 0 ? -3 : index === 1 ? -12 : 5), y: point.y + (index === 0 ? 5 : -12), font: fonts.bold, size: 9, color: ink }))
+    labelTargets = points
   } else if (type === 'atom') {
     const center = { x: x + width / 2, y: y - height / 2 }
     page.drawCircle({ x: center.x, y: center.y, size: 8, borderColor: ink, borderWidth: 1 })
     page.drawCircle({ x: center.x, y: center.y, size: 29, borderColor: muted, borderWidth: 0.8 })
     page.drawCircle({ x: center.x, y: center.y, size: 49, borderColor: muted, borderWidth: 0.8 })
     ;[[29, 0], [-29, 0], [0, 49], [0, -49]].forEach(([dx, dy]) => page.drawCircle({ x: center.x + dx, y: center.y + dy, size: 3, color: ink }))
+    labelTargets = [center, { x: center.x + 49, y: center.y }, { x: center.x, y: center.y + 49 }]
   } else if (type === 'circuit') {
     const left = x + 58, right = x + width - 58, top = y - 30, bottom = y - height + 30
     page.drawLine({ start: { x: left, y: top }, end: { x: right, y: top }, thickness: 1, color: ink }); page.drawLine({ start: { x: right, y: top }, end: { x: right, y: bottom }, thickness: 1, color: ink }); page.drawLine({ start: { x: right, y: bottom }, end: { x: left, y: bottom }, thickness: 1, color: ink }); page.drawLine({ start: { x: left, y: bottom }, end: { x: left, y: top }, thickness: 1, color: ink })
     page.drawLine({ start: { x: x + width / 2 - 5, y: top - 9 }, end: { x: x + width / 2 - 5, y: top + 9 }, thickness: 1, color: ink }); page.drawLine({ start: { x: x + width / 2 + 5, y: top - 14 }, end: { x: x + width / 2 + 5, y: top + 14 }, thickness: 1.5, color: ink })
+    labelTargets = [{ x: x + width / 2, y: top }, { x: right, y: y - height / 2 }, { x: left, y: bottom }]
   } else {
     page.drawText('DIAGRAM / WORKING SPACE', { x: x + 12, y: y - 20, font: fonts.bold, size: 8, color: muted })
+    labelTargets = [{ x: x + width * .35, y: y - 40 }, { x: x + width * .55, y: y - 68 }, { x: x + width * .4, y: y - 96 }]
+  }
+  if (item.question_type === 'label_diagram') {
+    const count = Math.min(item.options?.length || 3, 3)
+    const calloutX = x + width - 88
+    labelTargets.slice(0, count).forEach((target, index) => {
+      const calloutY = y - 22 - index * 36
+      page.drawLine({ start: target, end: { x: calloutX, y: calloutY }, thickness: 0.7, color: blue })
+      page.drawRectangle({ x: calloutX, y: calloutY - 9, width: 74, height: 18, borderColor: blue, borderWidth: 0.7, color: rgb(1, 1, 1) })
+      page.drawText(String(index + 1), { x: calloutX + 5, y: calloutY - 3, font: fonts.bold, size: 7, color: blue })
+    })
   }
   if (item.diagram_caption) drawWrapped(page, item.diagram_caption, { x: x + 10, y: y - height + 9, width: width - 20, font: fonts.regular, size: 7, lineHeight: 9, color: muted })
   return y - height
+}
+
+function drawWordBank(page, fonts, options, y) {
+  if (!options?.length) return y
+  const text = options.map((option, index) => `${String.fromCharCode(65 + index)}. ${safeText(option)}`).join('     ')
+  const lines = wrapText(text, fonts.regular, 8.5, A4[0] - MARGIN * 2 - 24)
+  const height = Math.max(34, lines.length * 12 + 20)
+  page.drawRectangle({ x: MARGIN + 34, y: y - height, width: A4[0] - MARGIN * 2 - 34, height, color: paleBlue, borderColor: line, borderWidth: 0.6 })
+  page.drawText('WORD BANK', { x: MARGIN + 46, y: y - 14, font: fonts.bold, size: 7, color: blue })
+  lines.forEach((entry, index) => page.drawText(entry, { x: MARGIN + 46, y: y - 29 - index * 12, font: fonts.regular, size: 8.5, color: ink }))
+  return y - height - 5
+}
+
+function drawMatching(page, fonts, item, y) {
+  const left = (item.matching_left || []).slice(0, 8)
+  const right = (item.matching_right || []).slice(0, left.length)
+  if (!left.length || right.length !== left.length) return y
+  const startX = MARGIN + 34
+  const width = A4[0] - MARGIN * 2 - 34
+  const columnWidth = (width - 78) / 2
+  const rowHeight = 42
+  page.drawText('DRAW A LINE TO MATCH EACH PAIR', { x: startX, y, font: fonts.bold, size: 7, color: blue })
+  y -= 18
+  left.forEach((entry, index) => {
+    const rowY = y - index * rowHeight
+    page.drawRectangle({ x: startX, y: rowY - 30, width: columnWidth, height: 34, borderColor: line, borderWidth: 0.7, color: index % 2 ? rgb(0.985, 0.99, 1) : paleBlue })
+    page.drawText(String(index + 1), { x: startX + 8, y: rowY - 10, font: fonts.bold, size: 8, color: blue })
+    drawWrapped(page, entry, { x: startX + 24, y: rowY - 6, width: columnWidth - 33, font: fonts.regular, size: 8, lineHeight: 10 })
+    page.drawCircle({ x: startX + columnWidth + 7, y: rowY - 13, size: 2.4, color: ink })
+    const rightX = startX + columnWidth + 78
+    page.drawCircle({ x: rightX - 7, y: rowY - 13, size: 2.4, color: ink })
+    page.drawRectangle({ x: rightX, y: rowY - 30, width: columnWidth, height: 34, borderColor: line, borderWidth: 0.7, color: index % 2 ? rgb(0.985, 0.99, 1) : paleBlue })
+    page.drawText(String.fromCharCode(65 + index), { x: rightX + 8, y: rowY - 10, font: fonts.bold, size: 8, color: blue })
+    drawWrapped(page, right[index], { x: rightX + 24, y: rowY - 6, width: columnWidth - 33, font: fonts.regular, size: 8, lineHeight: 10 })
+  })
+  return y - left.length * rowHeight - 2
+}
+
+function drawCompletionTable(page, fonts, item, y) {
+  const headers = (item.table_headers || []).slice(0, 5)
+  const rows = (item.table_rows || []).slice(0, 6)
+  if (!headers.length || !rows.length) return y
+  const x = MARGIN + 34
+  const width = A4[0] - MARGIN * 2 - 34
+  const columnWidth = width / headers.length
+  const headerHeight = 29
+  const rowHeight = 39
+  headers.forEach((header, column) => {
+    page.drawRectangle({ x: x + column * columnWidth, y: y - headerHeight, width: columnWidth, height: headerHeight, color: paleBlue, borderColor: muted, borderWidth: 0.7 })
+    drawWrapped(page, header, { x: x + column * columnWidth + 6, y: y - 11, width: columnWidth - 12, font: fonts.bold, size: 7.5, lineHeight: 9, color: ink })
+  })
+  let rowY = y - headerHeight
+  rows.forEach((row, rowIndex) => {
+    headers.forEach((_, column) => {
+      const value = row[column] ?? ''
+      page.drawRectangle({ x: x + column * columnWidth, y: rowY - rowHeight, width: columnWidth, height: rowHeight, color: value ? rgb(1, 1, 1) : rgb(0.985, 0.99, 1), borderColor: line, borderWidth: 0.6 })
+      if (value) drawWrapped(page, value, { x: x + column * columnWidth + 6, y: rowY - 13, width: columnWidth - 12, font: fonts.regular, size: 7.5, lineHeight: 9 })
+    })
+    rowY -= rowHeight
+  })
+  return rowY - 5
+}
+
+function drawClassification(page, fonts, item, y) {
+  const entries = (item.options || []).slice(0, 7)
+  const categories = (item.matching_right || []).slice(0, 4)
+  if (!entries.length || categories.length < 2) return y
+  const x = MARGIN + 34
+  const width = A4[0] - MARGIN * 2 - 34
+  const labelWidth = Math.min(205, width * 0.48)
+  const categoryWidth = (width - labelWidth) / categories.length
+  const headerHeight = 34
+  const rowHeight = 31
+  page.drawRectangle({ x, y: y - headerHeight, width: labelWidth, height: headerHeight, color: paleBlue, borderColor: line, borderWidth: 0.6 })
+  page.drawText('ITEM', { x: x + 7, y: y - 19, font: fonts.bold, size: 7, color: blue })
+  categories.forEach((category, index) => {
+    const cellX = x + labelWidth + index * categoryWidth
+    page.drawRectangle({ x: cellX, y: y - headerHeight, width: categoryWidth, height: headerHeight, color: paleBlue, borderColor: line, borderWidth: 0.6 })
+    drawWrapped(page, category, { x: cellX + 4, y: y - 11, width: categoryWidth - 8, font: fonts.bold, size: 6.5, lineHeight: 8, color: ink })
+  })
+  let rowY = y - headerHeight
+  entries.forEach((entry, rowIndex) => {
+    page.drawRectangle({ x, y: rowY - rowHeight, width: labelWidth, height: rowHeight, borderColor: line, borderWidth: 0.6, color: rowIndex % 2 ? rgb(0.985, 0.99, 1) : rgb(1, 1, 1) })
+    drawWrapped(page, `${rowIndex + 1}. ${entry}`, { x: x + 7, y: rowY - 11, width: labelWidth - 14, font: fonts.regular, size: 7.5, lineHeight: 9 })
+    categories.forEach((_, column) => {
+      const cellX = x + labelWidth + column * categoryWidth
+      page.drawRectangle({ x: cellX, y: rowY - rowHeight, width: categoryWidth, height: rowHeight, borderColor: line, borderWidth: 0.6 })
+      page.drawRectangle({ x: cellX + categoryWidth / 2 - 5, y: rowY - 20, width: 10, height: 10, borderColor: ink, borderWidth: 0.7 })
+    })
+    rowY -= rowHeight
+  })
+  return rowY - 5
 }
 
 function drawQuestionPaper(pdf, fonts, exam) {
@@ -164,6 +273,15 @@ function drawQuestionPaper(pdf, fonts, exam) {
   for (const [index, item] of (exam.items || []).entries()) {
     const questionType = item.question_type || (item.options?.length ? 'multiple_choice' : 'written')
     const nextSection = safeText(item.section || 'Questions')
+    const requestedLines = Number.isFinite(Number(item.answer_lines)) ? Number(item.answer_lines) : Number(item.marks) * 2
+    const estimatedLines = noGenericAnswerLineTypes.has(questionType) ? 0 : Math.max(0, Math.min(requestedLines, 24))
+    const formatHeight = questionType === 'multiple_choice' ? Math.min(item.options?.length || 0, 4) * 25
+      : questionType === 'matching' ? 25 + Math.min(item.matching_left?.length || 0, 8) * 42
+        : questionType === 'table_completion' ? 38 + Math.min(item.table_rows?.length || 0, 6) * 39
+          : questionType === 'classification' ? 42 + Math.min(item.options?.length || 0, 7) * 31
+            : questionType === 'fill_blank' || questionType === 'label_diagram' ? 55 : 0
+    const diagramHeight = item.diagram_type && item.diagram_type !== 'none' ? 150 : 0
+    ensure(Math.min(700, 90 + formatHeight + diagramHeight + estimatedLines * 22 + (nextSection !== section ? 42 : 0)))
     if (nextSection !== section) {
       ensure(48)
       page.drawRectangle({ x: MARGIN, y: y - 24, width: A4[0] - MARGIN * 2, height: 28, color: paleBlue })
@@ -178,7 +296,8 @@ function drawQuestionPaper(pdf, fonts, exam) {
     page.drawText(marks, { x: A4[0] - MARGIN - fonts.bold.widthOfTextAtSize(marks, 9), y, font: fonts.bold, size: 9, color: ink })
     let contentY = y
     if (item.context) contentY = drawWrapped(page, item.context, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.oblique, size: 9, lineHeight: 13, color: muted }) - 4
-    contentY = drawWrapped(page, item.prompt, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.regular, size: 10, lineHeight: 14 })
+    const prompt = questionType === 'fill_blank' ? safeText(item.prompt).replace(/\[blank\]/gi, '____________') : item.prompt
+    contentY = drawWrapped(page, prompt, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.regular, size: 10, lineHeight: 14 })
     y = contentY - 8
     if (questionType === 'multiple_choice' && item.options?.length) {
       for (const [optionIndex, option] of item.options.entries()) {
@@ -187,11 +306,37 @@ function drawQuestionPaper(pdf, fonts, exam) {
         y = drawWrapped(page, `${String.fromCharCode(65 + optionIndex)}  ${option}`, { x: MARGIN + 55, y: y + 3, width: A4[0] - MARGIN * 2 - 58, font: fonts.regular, size: 9, lineHeight: 13 }) - 5
       }
     }
+    if (questionType === 'matching') {
+      ensure(35 + Math.min(item.matching_left?.length || 0, 8) * 42)
+      y = drawMatching(page, fonts, item, y)
+    }
+    if (questionType === 'fill_blank') {
+      ensure(55)
+      y = drawWordBank(page, fonts, item.options, y)
+    }
+    if (questionType === 'table_completion') {
+      ensure(40 + Math.min(item.table_rows?.length || 0, 6) * 39)
+      y = drawCompletionTable(page, fonts, item, y)
+    }
+    if (questionType === 'classification') {
+      ensure(45 + Math.min(item.options?.length || 0, 7) * 31)
+      y = drawClassification(page, fonts, item, y)
+    }
     if (item.diagram_type && item.diagram_type !== 'none') {
       ensure(150)
       y = drawDiagram(page, item, MARGIN + 34, y, A4[0] - MARGIN * 2 - 34, fonts) - 10
     }
-    const lineCount = questionType === 'multiple_choice' ? 0 : Math.max(1, Math.min(Number(item.answer_lines) || Number(item.marks) * 2, 24))
+    if (questionType === 'label_diagram') {
+      ensure(55)
+      y = drawWordBank(page, fonts, item.options, y)
+    }
+    const lineCount = noGenericAnswerLineTypes.has(questionType) ? 0 : Math.max(0, Math.min(requestedLines, 24))
+    if (questionType === 'extended_response' && lineCount) {
+      ensure(30)
+      page.drawRectangle({ x: MARGIN + 34, y: y - 20, width: A4[0] - MARGIN * 2 - 34, height: 22, color: paleBlue })
+      page.drawText('EXTENDED RESPONSE - structure your answer clearly', { x: MARGIN + 44, y: y - 12, font: fonts.bold, size: 7.5, color: blue })
+      y -= 31
+    }
     for (let lineIndex = 0; lineIndex < lineCount; lineIndex += 1) {
       if (y - 24 < BOTTOM) {
         newPage()
@@ -216,12 +361,13 @@ function drawMarkScheme(pdf, fonts, exam) {
     ensure(45 + points.length * 18)
     const number = safeText(item.number || String(index + 1))
     page.drawText(number, { x: MARGIN, y, font: fonts.bold, size: 11, color: ink })
-    const marks = `${Number(item.marks) || 1} marks`
+    const markCount = Number(item.marks) || 1
+    const marks = `${markCount} ${markCount === 1 ? 'mark' : 'marks'}`
     page.drawText(marks, { x: A4[0] - MARGIN - fonts.bold.widthOfTextAtSize(marks, 9), y, font: fonts.bold, size: 9, color: ink })
     y -= 20
     for (const point of points) {
-      page.drawCircle({ x: MARGIN + 5, y: y + 4, size: 2, color: blue })
-      y = drawWrapped(page, point, { x: MARGIN + 16, y: y + 8, width: A4[0] - MARGIN * 2 - 16, font: fonts.regular, size: 9, lineHeight: 13 }) - 3
+      page.drawCircle({ x: MARGIN + 5, y: y - 4, size: 2, color: blue })
+      y = drawWrapped(page, point, { x: MARGIN + 16, y, width: A4[0] - MARGIN * 2 - 16, font: fonts.regular, size: 9, lineHeight: 13 }) - 4
     }
     y -= 12
     page.drawLine({ start: { x: MARGIN, y }, end: { x: A4[0] - MARGIN, y }, thickness: 0.4, color: line })
