@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { ArrowLeft, Gauge, Library, Menu, Settings, Shield, Swords, Trophy, Users, X } from 'lucide-react'
+import { ArrowLeft, Gauge, Library, Menu, Settings, Swords, Trophy, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import BrandWordmark from './BrandWordmark'
 import { ProfileAvatar } from './UI'
@@ -23,7 +23,6 @@ export default function RivalsLayout() {
     {mobile && <button className="rivals-scrim" onClick={() => setMobile(false)} aria-label="Close Rivals navigation" />}
     <aside className={`rivals-sidebar ${mobile ? 'open' : ''}`}>
       <div className="rivals-brand-row"><NavLink to="/rivals" className="rivals-brand"><BrandWordmark /><span><Swords /> Rivals</span></NavLink><button className="rivals-close" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <div className="rivals-season"><Shield /><span><small>Competitive study</small><b>Season One</b></span></div>
       <nav aria-label="Rivals navigation">{links.map(([to, Icon, label, end]) => <NavLink end={end} to={to} key={to}><Icon /><span>{label}</span></NavLink>)}</nav>
       <div className="rivals-sidebar-bottom"><NavLink to="/settings"><Settings /> Settings</NavLink><NavLink to="/app" className="rivals-return"><ArrowLeft /> Studentley dashboard</NavLink></div>
     </aside>

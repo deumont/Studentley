@@ -4,6 +4,8 @@ import { requireUser } from './_auth.js'
 export const config = { maxDuration: 60 }
 
 const ACTIVE_STATUSES = ['waiting', 'generating', 'active', 'finishing']
+const FINISH_WINDOW_MS = 20000
+const SUBMISSION_GRACE_MS = 5000
 
 function serviceClient() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase server settings are missing.'), { status: 503 })
@@ -179,7 +181,7 @@ async function advancePracticeRival(db, match) {
   const { error } = await db.from('rival_match_bots').update({ correct_answers: bot.target_correct, elapsed_ms: bot.planned_elapsed_ms, submitted_at: submittedAt }).eq('id', bot.id).is('submitted_at', null)
   if (error) throw error
   if (match.status === 'active') {
-    const deadline = new Date(dueAt + 15000).toISOString()
+    const deadline = new Date(dueAt + FINISH_WINDOW_MS).toISOString()
     const { data, error: matchError } = await db.from('rival_matches').update({ status: 'finishing', finish_deadline: deadline }).eq('id', match.id).eq('status', 'active').select().maybeSingle()
     if (matchError) throw matchError
     if (data) match = data
@@ -189,7 +191,7 @@ async function advancePracticeRival(db, match) {
 
 async function serializeMatch(db, match, userId) {
   match = await advancePracticeRival(db, match)
-  if (match.status === 'finishing' && match.finish_deadline && new Date(match.finish_deadline) <= new Date()) match = await finalizeMatch(db, match)
+  if (match.status === 'finishing' && match.finish_deadline && Date.now() > new Date(match.finish_deadline).getTime() + SUBMISSION_GRACE_MS) match = await finalizeMatch(db, match)
   let players = await getPlayers(db, match.id)
   if (!players.some(player => player.user_id === userId)) throw Object.assign(new Error('You are not part of this battle.'), { status: 403 })
   let bots = await getPracticeRivals(db, match.id)
@@ -408,7 +410,8 @@ async function startFriendRoom(db, userId, input) {
 async function submitMatch(db, userId, input) {
   let match = await getMatchRecord(db, input.matchId)
   if (!['active', 'finishing'].includes(match.status)) throw Object.assign(new Error('This battle is not accepting answers.'), { status: 409 })
-  if (match.finish_deadline && new Date(match.finish_deadline) <= new Date()) {
+  const deadlineTime = match.finish_deadline ? new Date(match.finish_deadline).getTime() : null
+  if (deadlineTime && Date.now() > deadlineTime + SUBMISSION_GRACE_MS) {
     match = await finalizeMatch(db, match)
     return { match: await serializeMatch(db, match, userId) }
   }
@@ -419,7 +422,7 @@ async function submitMatch(db, userId, input) {
   const answers = input.answers && typeof input.answers === 'object' ? input.answers : {}
   const items = Array.isArray(match.quiz) ? match.quiz : []
   const correct = items.reduce((total, item, index) => total + (Number(answers[index]) === Number(item.correct_index) ? 1 : 0), 0)
-  const submittedAt = new Date()
+  const submittedAt = new Date(deadlineTime && Date.now() > deadlineTime ? deadlineTime : Date.now())
   const elapsed = Math.max(0, Math.min(24 * 60 * 60 * 1000, submittedAt - new Date(match.started_at || match.created_at)))
   const { error: submitError } = await db.from('rival_match_players').update({ answers, correct_answers: correct, elapsed_ms: elapsed, submitted_at: submittedAt.toISOString() }).eq('match_id', match.id).eq('user_id', userId).is('submitted_at', null)
   if (submitError) throw submitError
@@ -430,7 +433,7 @@ async function submitMatch(db, userId, input) {
     if (botTimingError) throw botTimingError
   }
   if (match.status === 'active') {
-    const deadline = new Date(submittedAt.getTime() + 15000).toISOString()
+    const deadline = new Date(submittedAt.getTime() + FINISH_WINDOW_MS).toISOString()
     const { data, error } = await db.from('rival_matches').update({ status: 'finishing', finish_deadline: deadline }).eq('id', match.id).eq('status', 'active').select().maybeSingle()
     if (error) throw error
     if (data) match = data
