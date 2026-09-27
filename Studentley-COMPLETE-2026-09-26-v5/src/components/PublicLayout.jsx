@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { ArrowRight, Menu, X } from 'lucide-react'
 import { Link, NavLink } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
+import BrandWordmark from './BrandWordmark'
 
 export default function PublicLayout({ children }) {
   const [open, setOpen] = useState(false)
@@ -10,7 +11,7 @@ export default function PublicLayout({ children }) {
   return <div className="public-site">
     <header className="public-nav-wrap">
       <nav className="public-nav" aria-label="Public navigation">
-        <Link className="public-brand" to="/" onClick={close}><span>S</span><b>Studentley</b></Link>
+        <Link className="public-brand" to="/" onClick={close}><BrandWordmark variant="light" /></Link>
         <div className={`public-links ${open ? 'open' : ''}`}>
           <NavLink end to="/" onClick={close}>Home</NavLink>
           <a href="/#features" onClick={close}>Features</a>
@@ -22,6 +23,6 @@ export default function PublicLayout({ children }) {
       </nav>
     </header>
     {children}
-    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><span>S</span><b>Studentley</b></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><a href="/#features">Features</a><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy Policy</Link><Link to="/legal/terms">Terms & Conditions</Link><Link to="/legal/imprint">Legal Notice</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
+    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><BrandWordmark variant="dark" /></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><a href="/#features">Features</a><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy Policy</Link><Link to="/legal/terms">Terms & Conditions</Link><Link to="/legal/imprint">Legal Notice</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
   </div>
 }

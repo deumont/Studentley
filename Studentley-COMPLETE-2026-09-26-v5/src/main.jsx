@@ -5,6 +5,7 @@ import { AppProvider } from './context/AppContext'
 import App from './App'
 import './styles.css'
 import './public.css'
+import './brand.css'
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode><BrowserRouter><AppProvider><App /></AppProvider></BrowserRouter></React.StrictMode>,

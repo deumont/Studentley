@@ -5,6 +5,7 @@ import { useApp } from '../context/AppContext'
 import { markNotificationsRead } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { Button, formatDate, Modal, ProfileAvatar } from './UI'
+import BrandWordmark from './BrandWordmark'
 
 const links = [
   ['/app', Home, 'home'], ['/upload', FileUp, 'upload'], ['/study-plan', CalendarDays, 'studyPlan'],
@@ -26,7 +27,7 @@ export default function Layout() {
   return <div className="app-shell">
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
-      <div className="sidebar-top"><NavLink to="/app" className="brand" onClick={() => setMobile(false)}><span>S</span><b>Studentley</b></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
+      <div className="sidebar-top"><NavLink to="/app" className="brand dashboard-brand" onClick={() => setMobile(false)}><BrandWordmark /></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
       <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{copy[label]}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label={copy.proRequired} />}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>{copy.quote}</p></div>
     </aside>
