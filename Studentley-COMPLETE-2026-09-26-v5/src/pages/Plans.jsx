@@ -7,8 +7,8 @@ import { Button } from '../components/UI'
 
 const plans = [
   { id: 'free', name: 'Free', price: '€0', icon: Sprout, text: 'Start with the essentials and build a study rhythm around your real week.', features: ['3 document uploads per week', '1 personalized mock exam per week', '5 AI quizzes per week', 'Basic study plan', 'Flashcards', 'Basic progress', 'Basic practice'], note: 'No study reminders' },
-  { id: 'plus', name: 'Plus', price: '€3.99', icon: Sparkles, text: 'More practice and a plan shaped around your priorities.', popular: true, features: ['7 document uploads per week', '5 personalized mock exams per week', '30 AI quizzes per week', 'Personalized study plan', 'Flashcards and progress tracking', 'Advanced practice', 'Higher AI Tutor allowance'], note: 'A larger workspace for consistent study' },
-  { id: 'pro', name: 'Pro', price: '€6.99', icon: Rocket, text: 'Maximum room for ambitious students with fair-use protection.', features: ['Unlimited document uploads', 'Unlimited mock exams', 'Unlimited quizzes', 'Personalized study plan', 'Pro Studio personalization', 'Study reminders', 'Advanced progress and practice', 'Highest AI Tutor allowance'], note: 'The complete personalized experience' },
+  { id: 'plus', name: 'Plus', price: '€3.99', icon: Sparkles, text: 'More practice and a plan shaped around your priorities.', popular: true, features: ['7 document uploads per week', '5 personalized mock exams per week', '30 AI quizzes per week', 'Personalized study plan', 'Flashcards and progress tracking', 'Advanced practice', 'Higher personal AI allowance'], note: 'A larger workspace for consistent study' },
+  { id: 'pro', name: 'Pro', price: '€6.99', icon: Rocket, text: 'Maximum room for ambitious students with fair-use protection.', features: ['Unlimited document uploads', 'Unlimited mock exams', 'Unlimited quizzes', 'Personalized study plan', 'Pro Studio personalization', 'Free and blocked study windows', 'Study reminders', 'Highest personal AI allowance'], note: 'The complete personalized experience' },
 ]
 
 export default function Plans() {

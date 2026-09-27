@@ -11,17 +11,14 @@ const links = [
   ['/practice', GraduationCap, 'practice'], ['/leaderboard', Trophy, 'leaderboard'], ['/personalization', BrainCircuit, 'studio', true], ['/settings', Settings, 'settings'],
 ]
 
-const shellCopy = {
-  en: { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Exams', leaderboard: 'Leaderboard', studio: 'Studio', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' },
-  de: { home: 'Startseite', upload: 'Dokument hochladen', studyPlan: 'Lernplan', practice: 'Übungen & Prüfungen', leaderboard: 'Bestenliste', studio: 'Studio', settings: 'Einstellungen', quote: 'Kleine Schritte jeden Tag führen zu großen Ergebnissen.', notifications: 'Benachrichtigungen', caughtUp: 'Alles erledigt.', profile: 'Profil & Einstellungen', plans: 'Tarife & Abrechnung', signOut: 'Abmelden', proRequired: 'Benötigt Pro' },
-}
+const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Exams', leaderboard: 'Leaderboard', studio: 'Studio', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' }
 
 export default function Layout() {
   const { user, profile, data, refresh, notify } = useApp()
   const [mobile, setMobile] = useState(false), [account, setAccount] = useState(false), [notifications, setNotifications] = useState(false)
   const navigate = useNavigate(), menuRef = useRef()
   const name = profile?.display_name || 'Student'
-  const copy = shellCopy[profile?.preferred_language === 'de' ? 'de' : 'en']
+  const copy = shellCopy
   const unread = data?.notifications?.filter(item => !item.read_at) || []
   useEffect(() => { const click = event => !menuRef.current?.contains(event.target) && setAccount(false); document.addEventListener('mousedown', click); return () => document.removeEventListener('mousedown', click) }, [])
   useEffect(() => { document.title = 'Studentley' }, [])
@@ -40,15 +37,15 @@ export default function Layout() {
       </header>
       <div className="page"><Outlet /></div>
     </main>
-    <FloatingTutorButton />
+    <FloatingPersonalAIButton />
     <PlanWelcomeTour user={user} profile={profile} />
   </div>
 }
 
-function FloatingTutorButton() {
+function FloatingPersonalAIButton() {
   const navigate = useNavigate(), location = useLocation(), buttonRef = useRef(), drag = useRef(null), ignoreClick = useRef(false)
   const [position, setPosition] = useState(() => {
-    try { const value = JSON.parse(localStorage.getItem('studentley-tutor-position')); return Number.isFinite(value?.x) && Number.isFinite(value?.y) ? value : null } catch { return null }
+    try { const value = JSON.parse(localStorage.getItem('studentley-personal-ai-position') || localStorage.getItem('studentley-tutor-position')); return Number.isFinite(value?.x) && Number.isFinite(value?.y) ? value : null } catch { return null }
   })
   const clamp = value => ({ x: Math.max(10, Math.min(value.x, window.innerWidth - 68)), y: Math.max(76, Math.min(value.y, window.innerHeight - 68)) })
   useEffect(() => {
@@ -57,7 +54,7 @@ function FloatingTutorButton() {
     window.addEventListener('resize', resize)
     return () => window.removeEventListener('resize', resize)
   }, [])
-  if (location.pathname === '/ai-tutor') return null
+  if (location.pathname === '/personal-ai') return null
   const pointerDown = event => {
     if (event.button !== 0) return
     const rect = buttonRef.current.getBoundingClientRect()
@@ -76,20 +73,19 @@ function FloatingTutorButton() {
     if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
     ignoreClick.current = moved
     if (moved) {
-      setPosition(value => { if (value) localStorage.setItem('studentley-tutor-position', JSON.stringify(value)); return value })
+      setPosition(value => { if (value) localStorage.setItem('studentley-personal-ai-position', JSON.stringify(value)); return value })
       setTimeout(() => { ignoreClick.current = false }, 0)
     }
   }
-  const open = () => { if (ignoreClick.current) { ignoreClick.current = false; return } navigate('/ai-tutor') }
-  return <button ref={buttonRef} className="floating-tutor" style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined} onClick={open} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { drag.current = null }} aria-label="Open AI Tutor. Drag to reposition." title="AI Tutor — drag to move, click to open"><Bot /><span><Sparkles /></span></button>
+  const open = () => { if (ignoreClick.current) { ignoreClick.current = false; return } navigate('/personal-ai') }
+  return <button ref={buttonRef} className="floating-personal-ai" style={position ? { left: position.x, top: position.y, right: 'auto', bottom: 'auto' } : undefined} onClick={open} onPointerDown={pointerDown} onPointerMove={pointerMove} onPointerUp={pointerUp} onPointerCancel={() => { drag.current = null }} aria-label="Open your personal AI. Drag to reposition." title="Personal AI — drag to move, click to open"><Bot /><span><Sparkles /></span></button>
 }
 
 const planTours = {
-  en: {
     plus: [
       { icon: Sparkles, title: 'Welcome to Studentley Plus', text: 'You now have more room to upload, practise and generate learning material each week.' },
       { icon: CalendarDays, title: 'Build a personalized study plan', text: 'Choose up to five documents and Studentley will create an editable week grounded in your material.', route: '/study-plan' },
-      { icon: GraduationCap, title: 'Create more practice', text: 'Generate more quizzes, flashcards and full mock-exam PDFs, with a higher AI Tutor allowance.', route: '/practice' },
+      { icon: GraduationCap, title: 'Create more practice', text: 'Generate more quizzes, flashcards and full mock-exam PDFs, with a higher personal AI allowance.', route: '/practice' },
     ],
     pro: [
       { icon: Crown, title: 'Welcome to Studentley Pro', text: 'Your highest allowances and the complete personalized Studentley experience are now active.' },
@@ -97,27 +93,12 @@ const planTours = {
       { icon: Bell, title: 'Turn on study reminders', text: 'Pro reminders notify you before planned sessions, while unlimited uploads and practice keep you moving.', route: '/settings' },
     ],
     previous: 'Previous', next: 'Next', explore: 'Explore feature', done: 'Finish tour', step: 'Quick plan tour', close: 'Skip tutorial',
-  },
-  de: {
-    plus: [
-      { icon: Sparkles, title: 'Willkommen bei Studentley Plus', text: 'Du kannst jetzt jede Woche mehr Dokumente hochladen und mehr Lernmaterial erstellen.' },
-      { icon: CalendarDays, title: 'Erstelle einen persönlichen Lernplan', text: 'Wähle bis zu fünf Dokumente aus. Studentley erstellt daraus eine bearbeitbare Lernwoche.', route: '/study-plan' },
-      { icon: GraduationCap, title: 'Mehr Übungen erstellen', text: 'Erstelle mehr Quizze, Karteikarten und vollständige Probeprüfungen mit einem höheren KI-Tutor-Limit.', route: '/practice' },
-    ],
-    pro: [
-      { icon: Crown, title: 'Willkommen bei Studentley Pro', text: 'Deine höchsten Limits und die vollständige personalisierte Studentley-Erfahrung sind jetzt aktiv.' },
-      { icon: BrainCircuit, title: 'Dein Studio ist freigeschaltet', text: 'Ergänze Lernpräferenzen, Ziele, Schulzeiten, Schlaf und Aktivitäten, damit sich die KI an deinen Alltag anpasst.', route: '/personalization' },
-      { icon: Bell, title: 'Aktiviere Lernerinnerungen', text: 'Pro erinnert dich vor geplanten Lerneinheiten. Unbegrenzte Uploads und Übungen halten dich im Rhythmus.', route: '/settings' },
-    ],
-    previous: 'Zurück', next: 'Weiter', explore: 'Funktion öffnen', done: 'Tour beenden', step: 'Kurze Tarif-Tour', close: 'Tutorial überspringen',
-  },
 }
 
 function PlanWelcomeTour({ user, profile }) {
   const navigate = useNavigate(), location = useLocation()
   const plan = profile?.subscription_plan
-  const language = profile?.preferred_language === 'de' ? 'de' : 'en'
-  const copy = planTours[language]
+  const copy = planTours
   const slides = copy?.[plan] || []
   const [open, setOpen] = useState(false), [step, setStep] = useState(0)
   const storageKey = user?.id && plan ? `studentley-plan-tour-${user.id}-${plan}` : ''

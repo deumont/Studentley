@@ -9,7 +9,7 @@ Studentley is a production-oriented personal school and study operating system. 
 - Data-driven home dashboard with intentional empty states
 - Manual subjects, tasks, study sessions, weekly timetable, and exams
 - Private document upload and management for PDF, PowerPoint, Word, TXT, JPG, and PNG files up to 25 MB
-- OpenAI-powered tutoring, document analysis, summaries, timetable/exam extraction, quizzes, flashcards, mock exams, progress insights, and personalized study plans
+- OpenAI-powered personal assistance, workspace actions, document analysis, summaries, timetable/exam extraction, quizzes, flashcards, mock exams, progress insights, and personalized study plans
 - A multiplayer leaderboard, study streaks, and server-awarded Studentley Points for sessions, quizzes, and mock exams
 - Light, dark, and system themes saved to the account
 - Database-backed notifications, achievements structure, usage counters, and Free/Plus/Pro subscription records

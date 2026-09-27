@@ -175,9 +175,9 @@ export async function loadDocumentAiResults() {
 export async function loadPersonalization() {
   const [{ data: context, error: contextError }, { data: schedule, error: scheduleError }] = await Promise.all([
     supabase.from('personal_contexts').select('*').maybeSingle(),
-    supabase.from('personal_schedule_entries').select('*').order('day_of_week').order('start_time'),
+    supabase.from('personal_schedule_entries').select('id,user_id,title,category,availability_kind,day_of_week,start_time,end_time,notes,created_at,updated_at').order('day_of_week').order('start_time'),
   ])
-  const missing = [contextError, scheduleError].find(error => error && (['42P01', 'PGRST205'].includes(error.code) || /schema cache|does not exist/i.test(error.message || '')))
+  const missing = [contextError, scheduleError].find(error => error && (['42P01', '42703', 'PGRST204', 'PGRST205'].includes(error.code) || /schema cache|does not exist|could not find.*column/i.test(error.message || '')))
   if (missing) return { context: null, schedule: [], migrationRequired: true }
   if (contextError) throw contextError
   if (scheduleError) throw scheduleError

@@ -12,7 +12,7 @@ const studentFacts = [
 const features = [
   [UploadCloud, 'Document uploads', 'Turn your actual notes, PDFs, presentations, worksheets and images into an organised study library.', 'blue'],
   [CalendarDays, 'Personalized study plan', 'Plan around exams, available time, subjects and the way you prefer to work.', 'green'],
-  [MessageCircle, 'AI Tutor', 'Get contextual explanations grounded in the learning material you select.', 'violet'],
+  [MessageCircle, 'Personal AI', 'Get help shaped by your workspace—and ask it to add plans, tasks and deadlines for you.', 'violet'],
   [FileQuestion, 'Quizzes & mock exams', 'Build serious practice from the content you are genuinely expected to learn.', 'orange'],
   [BookOpen, 'Flashcards', 'Transform your own learning content into focused recall practice.', 'blue'],
   [BarChart3, 'Progress that means something', 'Keep study activity, preparation and results connected to real subjects and exams.', 'green'],

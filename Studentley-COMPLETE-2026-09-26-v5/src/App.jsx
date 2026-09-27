@@ -13,7 +13,7 @@ import Plans from './pages/Plans'
 import Legal from './pages/Legal'
 import Landing from './pages/Landing'
 import ResetPassword from './pages/ResetPassword'
-import AiTutor from './pages/AiTutor'
+import PersonalAI from './pages/PersonalAI'
 import Leaderboard from './pages/Leaderboard'
 import Personalization from './pages/Personalization'
 import { Loader } from './components/UI'
@@ -47,7 +47,8 @@ export default function App() {
         <Route path="/upload" element={<Upload />} />
         <Route path="/study-plan" element={<StudyPlan />} />
         <Route path="/practice" element={<Practice />} />
-        <Route path="/ai-tutor" element={<AiTutor />} />
+        <Route path="/personal-ai" element={<PersonalAI />} />
+        <Route path="/ai-tutor" element={<Navigate to="/personal-ai" replace />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
         <Route path="/personalization" element={<Personalization />} />
         <Route path="/settings" element={<Settings />} />

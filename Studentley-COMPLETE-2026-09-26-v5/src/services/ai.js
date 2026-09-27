@@ -6,7 +6,7 @@ const activityLabels = {
   analyzeDocument: 'Analyzing document', analyzeTimetable: 'Reading timetable', extractExamSchedule: 'Reading exam schedule',
   generateQuiz: 'Generating quiz', generateFlashcards: 'Generating flashcards', generateSummary: 'Generating summary',
   generateMockExam: 'Generating mock exam', generateStudyPlan: 'Generating study plan', analyzeProgress: 'Analyzing progress',
-  answerStudyQuestion: 'Preparing AI answer',
+  personalAssistant: 'Your personal AI is working',
 }
 
 const emitActivities = () => {
@@ -40,7 +40,7 @@ export const AI_OPERATIONS = Object.freeze({
   EXTRACT_EXAM_SCHEDULE: 'extractExamSchedule', GENERATE_QUIZ: 'generateQuiz',
   GENERATE_FLASHCARDS: 'generateFlashcards', GENERATE_SUMMARY: 'generateSummary',
   GENERATE_MOCK_EXAM: 'generateMockExam', GENERATE_STUDY_PLAN: 'generateStudyPlan',
-  ANALYZE_PROGRESS: 'analyzeProgress', ANSWER_STUDY_QUESTION: 'answerStudyQuestion',
+  ANALYZE_PROGRESS: 'analyzeProgress', PERSONAL_ASSISTANT: 'personalAssistant',
 })
 
 export async function requestAI(operation, input) {
@@ -70,4 +70,4 @@ export const generateSummary = input => requestAI(AI_OPERATIONS.GENERATE_SUMMARY
 export const generateMockExam = input => requestAI(AI_OPERATIONS.GENERATE_MOCK_EXAM, input)
 export const generateStudyPlan = input => requestAI(AI_OPERATIONS.GENERATE_STUDY_PLAN, input)
 export const analyzeProgress = input => requestAI(AI_OPERATIONS.ANALYZE_PROGRESS, input)
-export const answerStudyQuestion = input => requestAI(AI_OPERATIONS.ANSWER_STUDY_QUESTION, input)
+export const askPersonalAssistant = input => requestAI(AI_OPERATIONS.PERSONAL_ASSISTANT, input)

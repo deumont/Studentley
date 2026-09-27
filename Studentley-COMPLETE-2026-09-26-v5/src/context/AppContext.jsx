@@ -47,7 +47,7 @@ export function AppProvider({ children }) {
     document.documentElement.dataset.theme = theme === 'system' ? (prefersDark ? 'dark' : 'light') : theme
   }, [theme])
   useEffect(() => { if (profile?.theme_preference && profile.theme_preference !== theme) setTheme(profile.theme_preference) }, [profile?.theme_preference])
-  useEffect(() => { document.documentElement.lang = profile?.preferred_language === 'de' ? 'de' : 'en' }, [profile?.preferred_language])
+  useEffect(() => { document.documentElement.lang = 'en' }, [])
   useEffect(() => {
     if (!notice) return
     const timer = setTimeout(() => setNotice(null), 4200)
