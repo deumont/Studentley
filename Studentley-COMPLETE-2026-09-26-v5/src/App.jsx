@@ -20,6 +20,8 @@ import Personalization from './pages/Personalization'
 import { Loader } from './components/UI'
 import GenerationStatus from './components/GenerationStatus'
 import SeoManager from './components/SeoManager'
+import RivalsLayout from './components/RivalsLayout'
+import RivalsDashboard, { FriendRivals, RankedRivals, RivalMatch, RivalQuizLibrary } from './pages/Rivals'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile } = useApp()
@@ -46,6 +48,13 @@ export default function App() {
       <Route path="/auth/*" element={<Auth />} />
       <Route path="/legal/:document" element={<Legal />} />
       <Route path="/onboarding" element={<Protected><Onboarding /></Protected>} />
+      <Route path="/rivals" element={<Protected><RivalsLayout /></Protected>}>
+        <Route index element={<RivalsDashboard />} />
+        <Route path="ranked" element={<RankedRivals />} />
+        <Route path="friends" element={<FriendRivals />} />
+        <Route path="quizzes" element={<RivalQuizLibrary />} />
+        <Route path="match/:id" element={<RivalMatch />} />
+      </Route>
       <Route element={<Protected><Layout /></Protected>}>
         <Route path="/app" element={<Home />} />
         <Route path="/upload" element={<Upload />} />
