@@ -4,7 +4,7 @@ import { useLocation } from 'react-router-dom'
 const siteUrl = 'https://www.studentley.com'
 const defaultSeo = {
   title: 'Studentley — Personal AI Study Planner & Exam Practice',
-  description: 'Studentley is your personal AI study workspace: upload notes, build study plans, create quizzes and flashcards, and generate realistic mock exams.',
+  description: 'Studentley combines personalized AI study tools with Rivals: upload notes, build study plans, create exam practice, and compete or study with friends.',
 }
 
 const pages = {
