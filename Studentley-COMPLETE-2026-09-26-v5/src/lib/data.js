@@ -92,7 +92,8 @@ export async function markNotificationsRead() {
 }
 
 export async function loadLeaderboard(limit = 50) {
-  let leaderboardResult = await supabase.rpc('get_study_leaderboard_v2', { entry_limit: limit })
+  let leaderboardResult = await supabase.rpc('get_study_leaderboard_v3', { entry_limit: limit })
+  if (leaderboardResult.error) leaderboardResult = await supabase.rpc('get_study_leaderboard_v2', { entry_limit: limit })
   if (leaderboardResult.error) leaderboardResult = await supabase.rpc('get_study_leaderboard', { entry_limit: limit })
   const [{ data: stats, error: statsError }, { data: history, error: historyError }] = await Promise.all([
     supabase.rpc('get_my_student_stats'),

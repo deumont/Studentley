@@ -7,8 +7,8 @@ import { Button } from '../components/UI'
 
 const plans = [
   { id: 'free', name: 'Free', price: '€0', icon: Sprout, text: 'Start with the essentials and build a study rhythm around your real week.', features: ['3 document uploads per week', '1 personalized mock exam per week', '5 AI quizzes per week', 'Basic study plan', 'Flashcards', 'Basic progress', 'Basic practice'], note: 'No study reminders' },
-  { id: 'plus', name: 'Plus', price: '€3.99', icon: Sparkles, text: 'More practice, useful reminders and a plan shaped around your priorities.', popular: true, features: ['7 document uploads per week', '5 personalized mock exams per week', '30 AI quizzes per week', 'Personalized study plan', 'Study reminders', 'Flashcards and progress tracking', 'Advanced practice', 'Higher AI Tutor allowance'], note: 'AI analysis activates when integration is enabled' },
-  { id: 'pro', name: 'Pro', price: '€6.99', icon: Rocket, text: 'Maximum room for ambitious students with fair-use protection.', features: ['Unlimited document uploads', 'Unlimited mock exams', 'Unlimited quizzes', 'Personalized study plan', 'Study reminders', 'Advanced progress and practice', 'AI document analysis', 'Highest AI Tutor allowance'], note: 'AI features require the secure integration' },
+  { id: 'plus', name: 'Plus', price: '€3.99', icon: Sparkles, text: 'More practice and a plan shaped around your priorities.', popular: true, features: ['7 document uploads per week', '5 personalized mock exams per week', '30 AI quizzes per week', 'Personalized study plan', 'Flashcards and progress tracking', 'Advanced practice', 'Higher AI Tutor allowance'], note: 'A larger workspace for consistent study' },
+  { id: 'pro', name: 'Pro', price: '€6.99', icon: Rocket, text: 'Maximum room for ambitious students with fair-use protection.', features: ['Unlimited document uploads', 'Unlimited mock exams', 'Unlimited quizzes', 'Personalized study plan', 'Pro Studio personalization', 'Study reminders', 'Advanced progress and practice', 'Highest AI Tutor allowance'], note: 'The complete personalized experience' },
 ]
 
 export default function Plans() {
@@ -32,7 +32,7 @@ export default function Plans() {
         const response = await fetch(`/api/stripe/status?session_id=${encodeURIComponent(sessionId)}`, { headers: { Authorization: `Bearer ${session.access_token}` } })
         const result = await response.json()
         if (!response.ok) throw new Error(result.error)
-        if (active) { await refresh(); notify('Your Studentley plan is active.'); navigate('/plans', { replace: true }) }
+        if (active) { await refresh(); notify('Your Studentley plan is active.'); navigate(`/app?welcome_plan=${result.subscription.plan}`, { replace: true }) }
       } catch (error) { if (active) notify(error.message || 'Payment succeeded, but the plan is still syncing.', 'error') }
     }
     sync()

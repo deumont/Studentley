@@ -5,7 +5,7 @@ import { useApp } from '../context/AppContext'
 import { createRecord, saveProfile } from '../lib/data'
 import { Button, ErrorState, Field } from '../components/UI'
 
-const schoolSystems = ['IGCSE', 'GCSE', 'IB', 'A-Level', 'AP', 'Other']
+const schoolSystems = ['IGCSE', 'GCSE', 'IB', 'A-Level', 'Abitur', 'AP', 'Other']
 const starterSubjects = ['Mathematics', 'English', 'Biology', 'Chemistry', 'Physics', 'History', 'Geography', 'Computer Science', 'Spanish', 'French']
 const studyTimes = ['15 minutes', '30 minutes', '45 minutes', '1 hour', '1.5 hours', '2+ hours']
 const studyMinutes = { '15 minutes': 15, '30 minutes': 30, '45 minutes': 45, '1 hour': 60, '1.5 hours': 90, '2+ hours': 120 }
