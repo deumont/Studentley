@@ -8,6 +8,9 @@ const SELECTS = {
 }
 
 export async function loadWorkspace() {
+  // This RPC is intentionally best-effort so older databases continue to load
+  // until the Pro personalization migration has been applied.
+  await supabase.rpc('create_due_study_reminders').then(() => {}).catch(() => {})
   const results = await Promise.all(TABLES.map(table => supabase.from(table).select(SELECTS[table] || '*').order('created_at', { ascending: false })))
   const failed = results.find(result => result.error)
   if (failed) throw failed.error
@@ -89,11 +92,13 @@ export async function markNotificationsRead() {
 }
 
 export async function loadLeaderboard(limit = 50) {
-  const [{ data: leaderboard, error: leaderboardError }, { data: stats, error: statsError }, { data: history, error: historyError }] = await Promise.all([
-    supabase.rpc('get_study_leaderboard', { entry_limit: limit }),
+  let leaderboardResult = await supabase.rpc('get_study_leaderboard_v2', { entry_limit: limit })
+  if (leaderboardResult.error) leaderboardResult = await supabase.rpc('get_study_leaderboard', { entry_limit: limit })
+  const [{ data: stats, error: statsError }, { data: history, error: historyError }] = await Promise.all([
     supabase.rpc('get_my_student_stats'),
     supabase.from('student_point_events').select('*').order('created_at', { ascending: false }).limit(8),
   ])
+  const { data: leaderboard, error: leaderboardError } = leaderboardResult
   if (leaderboardError) throw leaderboardError
   if (statsError) throw statsError
   if (historyError) throw historyError
@@ -113,16 +118,24 @@ export async function uploadProfilePicture({ userId, file }) {
   const { data: userData, error: userError } = await supabase.auth.getUser()
   if (userError || !userData.user) throw userError || new Error('Your session expired. Please sign in again.')
   const previousPath = userData.user.user_metadata?.avatar_path || ''
-  const storagePath = `${userId}/profile/${crypto.randomUUID()}.${extensions[file.type]}`
-  const { error: uploadError } = await supabase.storage.from('documents').upload(storagePath, file, { contentType: file.type, cacheControl: '3600' })
+  const previousBucket = userData.user.user_metadata?.avatar_bucket || 'documents'
+  const storagePath = `${userId}/${crypto.randomUUID()}.${extensions[file.type]}`
+  const bucket = 'avatars'
+  const { error: uploadError } = await supabase.storage.from(bucket).upload(storagePath, file, { contentType: file.type, cacheControl: '3600' })
   if (uploadError) throw uploadError
-  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: storagePath }
+  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: storagePath, avatar_bucket: bucket }
   const { error: metadataError } = await supabase.auth.updateUser({ data: metadata })
   if (metadataError) {
-    await supabase.storage.from('documents').remove([storagePath])
+    await supabase.storage.from(bucket).remove([storagePath])
     throw metadataError
   }
-  if (previousPath && previousPath !== storagePath) await supabase.storage.from('documents').remove([previousPath])
+  const { error: profileError } = await supabase.from('profiles').update({ avatar_path: storagePath, avatar_bucket: bucket }).eq('id', userId)
+  if (profileError) {
+    await supabase.auth.updateUser({ data: { ...metadata, avatar_path: previousPath || null, avatar_bucket: previousPath ? previousBucket : null } })
+    await supabase.storage.from(bucket).remove([storagePath])
+    throw profileError
+  }
+  if (previousPath && previousPath !== storagePath) await supabase.storage.from(previousBucket).remove([previousPath])
   return storagePath
 }
 
@@ -130,17 +143,62 @@ export async function removeProfilePicture() {
   const { data: userData, error: userError } = await supabase.auth.getUser()
   if (userError || !userData.user) throw userError || new Error('Your session expired. Please sign in again.')
   const previousPath = userData.user.user_metadata?.avatar_path || ''
-  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: null }
+  const previousBucket = userData.user.user_metadata?.avatar_bucket || 'documents'
+  const metadata = { ...(userData.user.user_metadata || {}), avatar_path: null, avatar_bucket: null }
   const { error: metadataError } = await supabase.auth.updateUser({ data: metadata })
   if (metadataError) throw metadataError
-  if (previousPath) await supabase.storage.from('documents').remove([previousPath])
+  const { error: profileError } = await supabase.from('profiles').update({ avatar_path: null, avatar_bucket: null }).eq('id', userData.user.id)
+  if (profileError) {
+    await supabase.auth.updateUser({ data: { ...metadata, avatar_path: previousPath || null, avatar_bucket: previousPath ? previousBucket : null } })
+    throw profileError
+  }
+  if (previousPath) await supabase.storage.from(previousBucket).remove([previousPath])
 }
 
-export async function profilePictureUrl(storagePath) {
+export async function profilePictureUrl(storagePath, bucket = 'documents') {
   if (!storagePath) return ''
-  const { data, error } = await supabase.storage.from('documents').createSignedUrl(storagePath, 60 * 60 * 6)
+  const { data, error } = await supabase.storage.from(bucket).createSignedUrl(storagePath, 60 * 60 * 6)
   if (error) throw error
   return data.signedUrl
+}
+
+export async function loadDocumentAiResults() {
+  const { data, error } = await supabase.from('document_ai_results').select('*').order('updated_at', { ascending: false })
+  if (error) {
+    if (['42P01', 'PGRST205'].includes(error.code) || /schema cache|does not exist/i.test(error.message || '')) return []
+    throw error
+  }
+  return data || []
+}
+
+export async function loadPersonalization() {
+  const [{ data: context, error: contextError }, { data: schedule, error: scheduleError }] = await Promise.all([
+    supabase.from('personal_contexts').select('*').maybeSingle(),
+    supabase.from('personal_schedule_entries').select('*').order('day_of_week').order('start_time'),
+  ])
+  const missing = [contextError, scheduleError].find(error => error && (['42P01', 'PGRST205'].includes(error.code) || /schema cache|does not exist/i.test(error.message || '')))
+  if (missing) return { context: null, schedule: [], migrationRequired: true }
+  if (contextError) throw contextError
+  if (scheduleError) throw scheduleError
+  return { context, schedule: schedule || [], migrationRequired: false }
+}
+
+export async function savePersonalContext(userId, changes) {
+  const { data, error } = await supabase.from('personal_contexts').upsert({ user_id: userId, ...changes }).select().single()
+  if (error) throw error
+  return data
+}
+
+export async function createScheduleEntry(record) {
+  return createRecord('personal_schedule_entries', record)
+}
+
+export async function updateScheduleEntry(id, changes) {
+  return updateRecord('personal_schedule_entries', id, changes)
+}
+
+export async function removeScheduleEntry(id) {
+  return removeRecord('personal_schedule_entries', id)
 }
 
 export async function submitMockExamResult(practiceSetId, scorePercent) {

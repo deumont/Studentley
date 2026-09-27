@@ -15,6 +15,7 @@ import Landing from './pages/Landing'
 import ResetPassword from './pages/ResetPassword'
 import AiTutor from './pages/AiTutor'
 import Leaderboard from './pages/Leaderboard'
+import Personalization from './pages/Personalization'
 import { Loader } from './components/UI'
 import GenerationStatus from './components/GenerationStatus'
 
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="/practice" element={<Practice />} />
         <Route path="/ai-tutor" element={<AiTutor />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
+        <Route path="/personalization" element={<Personalization />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

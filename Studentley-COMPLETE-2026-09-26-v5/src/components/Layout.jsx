@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
-import { Bell, Bot, CalendarDays, ChevronDown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Trophy, X } from 'lucide-react'
+import { Bell, Bot, BrainCircuit, CalendarDays, ChevronDown, FileUp, GraduationCap, Home, Menu, Settings, Sparkles, Trophy, X } from 'lucide-react'
 import { NavLink, Outlet, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { markNotificationsRead } from '../lib/data'
@@ -8,7 +8,7 @@ import { formatDate, ProfileAvatar } from './UI'
 
 const links = [
   ['/app', Home, 'Home'], ['/upload', FileUp, 'Upload Document'], ['/study-plan', CalendarDays, 'Study Plan'],
-  ['/practice', GraduationCap, 'Practice & Exams'], ['/ai-tutor', Bot, 'AI Tutor'], ['/leaderboard', Trophy, 'Leaderboard'], ['/settings', Settings, 'Settings'],
+  ['/practice', GraduationCap, 'Practice & Exams'], ['/ai-tutor', Bot, 'AI Tutor'], ['/leaderboard', Trophy, 'Leaderboard'], ['/personalization', BrainCircuit, 'Personalization', true], ['/settings', Settings, 'Settings'],
 ]
 
 export default function Layout() {
@@ -24,7 +24,7 @@ export default function Layout() {
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
       <div className="sidebar-top"><NavLink to="/app" className="brand" onClick={() => setMobile(false)}><span>S</span><b>Studentley</b></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <nav aria-label="Primary">{links.map(([to, Icon, label]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon />{label}</NavLink>)}</nav>
+      <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{label}</span>{proOnly && <em className={profile?.subscription_plan === 'pro' ? 'unlocked' : ''}>{profile?.subscription_plan === 'pro' ? 'PRO' : 'LOCKED'}</em>}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>Small steps every day lead to big results.</p></div>
     </aside>
     <main className="main-area">

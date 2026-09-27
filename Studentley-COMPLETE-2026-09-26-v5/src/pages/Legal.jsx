@@ -3,7 +3,7 @@ import { ArrowLeft, Mail, MapPin, ShieldCheck } from 'lucide-react'
 import { Link, Navigate, useParams } from 'react-router-dom'
 
 const updated = '26 September 2026'
-const email = 'Paul.kuchler@studentley.com'
+const email = 'support@studentley.com'
 
 function ContactCard() {
   return <div className="legal-contact"><div><MapPin /><span><b>Studentley · Paul Kuchler</b><small>Heinrich-Kürfgen-Strasse 4<br />Germany</small></span></div><div><Mail /><span><b>Legal and privacy contact</b><a href={`mailto:${email}`}>{email}</a></span></div></div>

@@ -15,15 +15,16 @@ export function EmptyState({ icon: Icon = Sparkles, title, text, children, compa
   return <div className={`empty-state ${compact ? 'compact' : ''}`}><span className="icon-bubble blue"><Icon /></span><h3>{title}</h3><p>{text}</p>{children}</div>
 }
 
-export function ProfileAvatar({ user, name = 'Student', className = '' }) {
-  const path = user?.user_metadata?.avatar_path || ''
+export function ProfileAvatar({ user, name = 'Student', className = '', path: explicitPath, bucket: explicitBucket }) {
+  const path = explicitPath ?? user?.user_metadata?.avatar_path ?? ''
+  const bucket = explicitBucket || user?.user_metadata?.avatar_bucket || 'documents'
   const [url, setUrl] = useState('')
   useEffect(() => {
     let current = true
     setUrl('')
-    if (path) profilePictureUrl(path).then(value => current && setUrl(value)).catch(() => {})
+    if (path) profilePictureUrl(path, bucket).then(value => current && setUrl(value)).catch(() => {})
     return () => { current = false }
-  }, [path])
+  }, [path, bucket])
   const initials = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'S'
   return <span className={`avatar ${url ? 'has-image' : ''} ${className}`}>{url ? <img src={url} alt={`${name}'s profile`} /> : initials}</span>
 }
