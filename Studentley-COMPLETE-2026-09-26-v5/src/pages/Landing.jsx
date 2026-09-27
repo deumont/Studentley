@@ -5,7 +5,7 @@ import PublicLayout from '../components/PublicLayout'
 
 const studentFacts = [
   ['Different material', 'PowerPoints, worksheets, notes and textbooks all demand a different approach.'],
-  ['Different pressure', 'Five approaching exams is a different week from one difficult topic.'],
+  ['Study together', 'Beat your friends in Studentley Rivals.'],
   ['Different rhythm', 'Your time, pace and study habits should shape the plan—not the other way around.'],
 ]
 
