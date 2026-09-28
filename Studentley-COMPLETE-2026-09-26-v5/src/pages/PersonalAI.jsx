@@ -1,24 +1,26 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Mic, MicOff, Send, Sparkles, Trash2, UserRoundCog, Volume2, VolumeX } from 'lucide-react'
+import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileQuestion, FileText, GraduationCap, Layers3, Lightbulb, ListPlus, LockKeyhole, Send, Sparkles, Trash2, UserRoundCog, Volume2, VolumeX, Mic, MicOff } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
-import { askPersonalAssistant, getPersonalAIAudio } from '../services/ai'
+import { analyzeDocument, analyzeProgress, analyzeTimetable, askPersonalAssistant, extractExamSchedule, generateFlashcards, generateMockExam, generateQuiz, generateStudyPlan, generateSummary, generateVisualExplanation, getPersonalAIAudio } from '../services/ai'
 import { Button, PageHeading } from '../components/UI'
 
 const starters = [
+  'Make me a 10-question quiz from this material',
+  'Create a mock exam from this document',
+  'Explain this topic with a visual guide',
   'Schedule a 45-minute study session tomorrow morning',
-  'Add a task for the most important thing I should revise next',
-  'Explain what I should focus on this week',
-  'Create an exam reminder for my next assessment',
 ]
 
 const welcome = {
   role: 'assistant',
-  text: 'I’m your personal Studentley AI. I can use your subjects, plans, deadlines and selected documents to help—and I can add study sessions, tasks, exams and subjects when you ask me to.',
+  text: 'Hey—what are we working on? I can explain something, make a quiz or exam, create revision tools, or plan your study time.',
   welcome: true,
 }
 
-const actionIcons = { study_session: CalendarPlus, task: ListPlus, exam: CalendarCheck2, subject: BookOpen }
+const actionIcons = { study_session: CalendarPlus, task: ListPlus, exam: CalendarCheck2, subject: BookOpen, quiz: FileQuestion, flashcards: Layers3, mock_exam: GraduationCap, visual_guide: Lightbulb, summary: FileText, document_analysis: FileText, study_plan: CalendarCheck2, timetable: CalendarPlus, exam_schedule: GraduationCap }
+const nextMonday = () => { const value = new Date(); const day = value.getDay() || 7; value.setDate(value.getDate() - day + 8); return value.toISOString().slice(0, 10) }
+const concise = (value, limit = 240) => { const text = String(value || '').trim(); if (text.length <= limit) return text; return `${text.slice(0, limit).replace(/\s+\S*$/, '')}…` }
 const mobileDevice = () => {
   if (typeof navigator === 'undefined') return false
   if (navigator.userAgentData?.mobile) return true
@@ -75,6 +77,7 @@ export default function PersonalAI() {
   const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
+  const selectedSubject = useMemo(() => subjects.find(item => item.id === subjectId), [subjects, subjectId])
   const mobileVoiceEnabled = mobileDevice()
   const voiceInputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
   const voiceOutputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.AudioContext || window.webkitAudioContext)
@@ -287,6 +290,63 @@ export default function PersonalAI() {
     }
   }
 
+  const runRequestedGeneration = async generation => {
+    const type = generation?.type
+    if (!type) return null
+    const topic = String(generation.topic || '').trim()
+    const subjectName = selectedSubject?.name || String(generation.subject || '').trim()
+    const difficulty = String(generation.difficulty || '').trim() || (type === 'mock_exam' ? 'Exam standard' : 'Medium')
+    const common = { documentId: documentId || null, subjectId: subjectId || null, subjectName, topic, difficulty }
+    const needsSource = ['quiz', 'flashcards', 'visual_guide'].includes(type)
+    if (needsSource && !documentId && !subjectId && !topic) throw new Error('Select a document or subject, or name a topic first.')
+    if (['summary', 'document_analysis', 'study_plan', 'timetable_import', 'exam_schedule_import', 'mock_exam'].includes(type) && !documentId) throw new Error('Select the document you want me to use first.')
+
+    if (type === 'quiz' || type === 'flashcards') {
+      const count = Math.max(5, Math.min(Number(generation.count) || (type === 'quiz' ? 10 : 20), type === 'quiz' ? 25 : 40))
+      const result = type === 'quiz' ? await generateQuiz({ ...common, count, questionStyle: 'Multiple choice' }) : await generateFlashcards({ ...common, count })
+      return { answer: `Done — your ${type === 'quiz' ? `${count}-question quiz` : `${count}-card flashcard set`} is ready.`, actions: [{ id: result.practiceSet.id, kind: type, title: result.practiceSet.title, detail: `${result.practiceSet.items?.length || count} ${type === 'quiz' ? 'questions' : 'cards'}`, path: '/practice' }] }
+    }
+    if (type === 'mock_exam') {
+      const count = Math.max(5, Math.min(Number(generation.count) || 10, 20))
+      const qualification = String(generation.qualification || '').trim() || profile?.school_system || 'GCSE'
+      const result = await generateMockExam({ ...common, documentIds: [documentId], count, qualification, gradeYear: profile?.grade_year || qualification, examBoard: 'Auto', paperCode: '', durationMinutes: Math.max(30, Number(generation.duration_minutes) || 90), totalMarks: Math.max(20, Number(generation.total_marks) || 60), assessmentStyle: ['IB', 'A-Level', 'Abitur', 'AP'].includes(qualification) ? 'Written depth' : 'Balanced variety', questionFormats: ['multiple choice', 'matching', 'fill in', 'table or data completion', 'diagrams', 'calculations', 'structured writing', 'extended responses'], calculatorPolicy: 'Follow normal subject expectations', customInstructions: String(generation.extra_instructions || '').trim() })
+      return { answer: 'Done — your mock exam and mark scheme are ready.', actions: [{ id: result.practiceSet.id, kind: 'mock_exam', title: result.practiceSet.title, detail: `${result.practiceSet.config?.totalMarks || 60} marks · PDF`, path: '/practice' }] }
+    }
+    if (type === 'visual_guide') {
+      const result = await generateVisualExplanation({ ...common, level: profile?.grade_year || profile?.school_system || '', visualStyle: 'Colorful infographic' })
+      return { answer: 'Done — your visual guide is ready.', actions: [{ id: result.practiceSet.id, kind: 'visual_guide', title: result.practiceSet.title, detail: 'Illustrated PDF guide', path: '/practice' }] }
+    }
+    if (type === 'summary' || type === 'document_analysis') {
+      const result = type === 'summary' ? await generateSummary({ documentId }) : await analyzeDocument({ documentId })
+      return { answer: `Done — I saved the ${type === 'summary' ? 'summary' : 'analysis'} under your document.`, actions: [{ id: documentId, kind: type, title: result.title || selectedDocument?.name || 'Document result', detail: type === 'summary' ? 'Saved summary' : 'Saved analysis', path: '/upload', operation: type === 'summary' ? 'summary' : 'analysis' }] }
+    }
+    if (type === 'study_plan') {
+      const result = await generateStudyPlan({ documentId, documentIds: [documentId], weekStart: nextMonday(), dailyMinutes: profile?.daily_study_minutes || 45, sessionMinutes: 45, studyApproach: generation.study_approach || 'Balanced', focus: generation.focus || topic, replaceExisting: false })
+      return { answer: `Done — I added ${result.imported || 0} study sessions to your plan.`, actions: [{ kind: 'study_plan', title: result.title || 'Personalized study plan', detail: `${result.imported || 0} sessions added`, path: '/study-plan' }] }
+    }
+    if (type === 'timetable_import') {
+      const result = await analyzeTimetable({ documentId })
+      return { answer: `Done — I imported ${result.imported || 0} classes.`, actions: [{ kind: 'timetable', title: 'Imported timetable', detail: `${result.imported || 0} classes added`, path: '/study-plan' }] }
+    }
+    if (type === 'exam_schedule_import') {
+      const result = await extractExamSchedule({ documentId, timezone: profile?.timezone })
+      return { answer: `Done — I imported ${result.imported || 0} exams.`, actions: [{ kind: 'exam_schedule', title: 'Imported exam schedule', detail: `${result.imported || 0} exams added`, path: '/practice', tab: 'exams' }] }
+    }
+    if (type === 'progress_review') {
+      const result = await analyzeProgress({})
+      const nextStep = result.next_steps?.[0] ? ` Next: ${result.next_steps[0]}` : ''
+      return { answer: concise(`${result.summary || 'Your progress review is ready.'}${nextStep}`), actions: [] }
+    }
+    return null
+  }
+
+  const openCreatedAction = action => {
+    if (!action.path) return
+    if (action.path === '/practice') navigate('/practice', { state: action.id ? { openPracticeSetId: action.id } : { openPracticeTab: action.tab || 'exams' } })
+    else if (action.path === '/upload') navigate('/upload', { state: { openDocumentResult: { documentId: action.id, operation: action.operation } } })
+    else navigate(action.path)
+  }
+
   const send = async event => {
     event?.preventDefault()
     if (keepListeningRef.current) stopListening()
@@ -298,8 +358,18 @@ export default function PersonalAI() {
     setSending(true)
     try {
       const result = await askPersonalAssistant({ question: text, subjectId: subjectId || null, documentId: documentId || null, history })
-      if (result.created?.length) await refresh()
-      setMessages(items => [...items, { role: 'assistant', text: result.answer, sources: result.sources || [], actions: result.created || [] }])
+      let answer = result.answer, actions = result.created || [], unavailable = false
+      if (result.generation?.type) {
+        try {
+          const generated = await runRequestedGeneration(result.generation)
+          if (generated) { answer = generated.answer; actions = [...actions, ...(generated.actions || [])] }
+        } catch (generationError) {
+          answer = `I couldn’t make that yet — ${generationError.message || 'please try again.'}`
+          unavailable = true
+        }
+      }
+      if (actions.length) await refresh()
+      setMessages(items => [...items, { role: 'assistant', text: answer, sources: result.sources || [], actions, unavailable }])
     } catch (error) {
       setMessages(items => [...items, { role: 'assistant', text: error.message || 'Your personal AI could not complete that request right now.', unavailable: true }])
     } finally { setSending(false) }
@@ -316,7 +386,7 @@ export default function PersonalAI() {
   }
 
   return <>
-    <PageHeading eyebrow="Personal AI" title="Your AI, shaped around your life" text="Ask for help or tell it to add study sessions, tasks, exams and subjects directly to your Studentley workspace." />
+    <PageHeading eyebrow="Personal AI" title="Your AI, shaped around your life" text="Ask for help, generate study tools, or add plans and deadlines directly to your Studentley workspace." />
     <div className="tutor-layout personal-ai-layout">
       <aside className="card tutor-context">
         <div className="tutor-panel-title"><span className="icon-bubble violet"><UserRoundCog /></span><div><h2>Your context</h2><p>Personal and private to your account.</p></div></div>
@@ -333,7 +403,7 @@ export default function PersonalAI() {
         <div className="tutor-messages" aria-live="polite">
           {messages.map((message, index) => <div className={`tutor-message ${message.role} ${message.unavailable ? 'unavailable' : ''}`} key={`${message.role}-${index}`}>
             {message.role === 'assistant' && <span><Bot /></span>}
-            <div><p>{message.text}</p>{message.role === 'assistant' && voiceOutputSupported && <button type="button" className={`tutor-speak-button ${speakingIndex === index || voiceLoadingIndex === index ? 'speaking' : ''}`} onClick={() => speakMessage(message.text, index)} aria-label={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read response aloud'} title={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read aloud'}>{speakingIndex === index || voiceLoadingIndex === index ? <VolumeX /> : <Volume2 />}{voiceLoadingIndex === index ? 'Preparing…' : speakingIndex === index ? 'Stop' : 'Listen'}</button>}{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span><CheckCircle2 /></article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again. No workspace item was added.</small>}</div>
+            <div><p>{message.text}</p>{message.role === 'assistant' && voiceOutputSupported && <button type="button" className={`tutor-speak-button ${speakingIndex === index || voiceLoadingIndex === index ? 'speaking' : ''}`} onClick={() => speakMessage(message.text, index)} aria-label={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read response aloud'} title={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read aloud'}>{speakingIndex === index || voiceLoadingIndex === index ? <VolumeX /> : <Volume2 />}{voiceLoadingIndex === index ? 'Preparing…' : speakingIndex === index ? 'Stop' : 'Listen'}</button>}{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span>{action.path ? <button type="button" onClick={() => openCreatedAction(action)}>View</button> : <CheckCircle2 />}</article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again.</small>}</div>
           </div>)}
           {messages.length === 1 && <div className="tutor-starters">{starters.map(starter => <button key={starter} onClick={() => setQuestion(starter)}><Sparkles />{starter}</button>)}</div>}
           {sending && <div className="tutor-message assistant typing"><span><Bot /></span><div><i /><i /><i /></div></div>}

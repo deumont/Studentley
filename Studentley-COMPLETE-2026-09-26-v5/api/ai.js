@@ -94,7 +94,14 @@ function schemaFor(operation) {
   if (operation === 'generateStudyPlan') return { ...base, properties: { title: { type: 'string' }, rationale: { type: 'string' }, items: { type: 'array', items: { ...base, properties: { title: { type: 'string' }, subject: { type: 'string' }, starts_at: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 5, maximum: 180 }, notes: { type: 'string' } }, required: ['title', 'subject', 'starts_at', 'duration_minutes', 'notes'] } } }, required: ['title', 'rationale', 'items'] }
   if (operation === 'analyzeProgress') return { ...base, properties: { summary: { type: 'string' }, strengths: stringArray, focus_areas: stringArray, next_steps: stringArray }, required: ['summary', 'strengths', 'focus_areas', 'next_steps'] }
   if (operation === 'markMockExam') return { ...base, properties: { earned_marks: { type: 'integer', minimum: 0, maximum: 500 }, total_marks: { type: 'integer', minimum: 1, maximum: 500 }, score_percent: { type: 'number', minimum: 0, maximum: 100 }, summary: { type: 'string' }, strengths: stringArray, improvements: stringArray, question_feedback: { type: 'array', items: { ...base, properties: { number: { type: 'string' }, awarded_marks: { type: 'integer', minimum: 0, maximum: 100 }, available_marks: { type: 'integer', minimum: 1, maximum: 100 }, feedback: { type: 'string' } }, required: ['number', 'awarded_marks', 'available_marks', 'feedback'] } } }, required: ['earned_marks', 'total_marks', 'score_percent', 'summary', 'strengths', 'improvements', 'question_feedback'] }
-  if (operation === 'personalAssistant') return { ...base, properties: { answer: { type: 'string' }, sources: stringArray, actions: { type: 'array', maxItems: 8, items: { ...base, properties: { type: { type: 'string', enum: ['create_study_session', 'create_task', 'create_exam', 'create_subject'] }, title: { type: 'string' }, subject: { type: 'string' }, starts_at: { type: 'string' }, due_at: { type: 'string' }, exam_at: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 0, maximum: 180 }, priority: { type: 'string', enum: ['', 'low', 'medium', 'high'] }, notes: { type: 'string' } }, required: ['type', 'title', 'subject', 'starts_at', 'due_at', 'exam_at', 'duration_minutes', 'priority', 'notes'] } } }, required: ['answer', 'sources', 'actions'] }
+  if (operation === 'personalAssistant') return { ...base, properties: {
+    answer: { type: 'string' }, sources: stringArray,
+    actions: { type: 'array', maxItems: 8, items: { ...base, properties: { type: { type: 'string', enum: ['create_study_session', 'create_task', 'create_exam', 'create_subject'] }, title: { type: 'string' }, subject: { type: 'string' }, starts_at: { type: 'string' }, due_at: { type: 'string' }, exam_at: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 0, maximum: 180 }, priority: { type: 'string', enum: ['', 'low', 'medium', 'high'] }, notes: { type: 'string' } }, required: ['type', 'title', 'subject', 'starts_at', 'due_at', 'exam_at', 'duration_minutes', 'priority', 'notes'] } },
+    generation: { ...base, properties: {
+      type: { type: 'string', enum: ['', 'quiz', 'flashcards', 'mock_exam', 'visual_guide', 'summary', 'document_analysis', 'study_plan', 'timetable_import', 'exam_schedule_import', 'progress_review'] },
+      subject: { type: 'string' }, topic: { type: 'string' }, difficulty: { type: 'string' }, count: { type: 'integer', minimum: 0, maximum: 40 }, qualification: { type: 'string' }, duration_minutes: { type: 'integer', minimum: 0, maximum: 240 }, total_marks: { type: 'integer', minimum: 0, maximum: 120 }, focus: { type: 'string' }, study_approach: { type: 'string' }, extra_instructions: { type: 'string' },
+    }, required: ['type', 'subject', 'topic', 'difficulty', 'count', 'qualification', 'duration_minutes', 'total_marks', 'focus', 'study_approach', 'extra_instructions'] },
+  }, required: ['answer', 'sources', 'actions', 'generation'] }
   return { ...base, properties: { answer: { type: 'string' }, sources: stringArray }, required: ['answer', 'sources'] }
 }
 
@@ -131,7 +138,15 @@ Formatting rules are strict. Set answer_lines to 0 for multiple_choice, matching
   if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Every study topic and activity must be grounded in the selected uploaded documents; combine overlapping material sensibly and do not add unsupported topics. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable, exams and existing study sessions. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Preferred session length: ${Number(input.sessionMinutes) || 45} minutes. Study approach: ${input.studyApproach || 'Balanced'}. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
   if (operation === 'analyzeProgress') return `${common} Analyze the supplied completed sessions and practice results. Be encouraging but honest. Give concrete strengths, focus areas, and next steps. If data is sparse, say so.`
   if (operation === 'markMockExam') return `${common} Mark the uploaded completed mock examination against the exact generated paper and mark scheme included in context. Read handwriting or typed answers carefully. Award marks question by question only when the submitted answer earns the corresponding marking point. Do not invent an answer when writing is blank, cropped, illegible or absent; award zero for that part and explain why. Respect method marks and valid alternative reasoning when the mark scheme allows them. Return feedback for every numbered question, concise strengths, and the highest-priority improvements. The sum of awarded_marks in question_feedback must equal earned_marks. total_marks must equal the generated paper total. score_percent must equal earned_marks / total_marks * 100, rounded to one decimal place.`
-  return `${common} Act as the student's personal study assistant. Current timestamp, timezone and workspace records are included in context. Answer directly and helpfully. Use simple everyday words, short sentences and one idea at a time. Avoid jargon; briefly explain any technical word that is necessary. By default keep the answer below 100 words and use a short bullet list when that is clearer. Only go beyond 100 words when the student explicitly asks for a deep, detailed or step-by-step explanation, and even then stay focused and below 300 words. Do not repeat the question or dump workspace context back to the student. If the student clearly asks you to add something, include the required create action: create_study_session, create_task, create_exam or create_subject. Actions run immediately, so never create an action for a hypothetical example, a question about capability, or an ambiguous request. Do not create duplicates. For a study session, provide an unambiguous ISO 8601 starts_at with timezone offset, a duration from 5 to 180 minutes, and use empty strings for due_at and exam_at. Never overlap classes, existing study sessions or dates in the past. For a task, provide due_at when the user specified or clearly implied a deadline. For an exam, provide exam_at. Use create_subject only when the student explicitly asks to add a subject. Use empty strings and 0 for fields that do not apply. Use the selected source when provided and cite its filename in sources. If an answer is not supported by the source, clearly say what is uncertain. Never claim to have read a source that was not supplied, never delete or mark items complete, and never claim an item was added unless you returned its action.`
+  return `${common} Act like a warm, natural personal study assistant—not a formal chatbot. Current timestamp, timezone and workspace records are included in context. Reply directly with contractions and simple everyday words. Usually write one or two short sentences and stay below 45 words. If the student explicitly asks for an explanation, use at most 80 words unless they ask for detail. Never repeat the question, add a generic introduction, dump workspace data, or use stiff phrases such as “I have successfully”.
+
+Dates must sound natural. Never show ISO timestamps, timezone abbreviations, numeric date-time strings or 24-hour time in the answer. Say “today at 4 PM”, “tomorrow at 9 AM” or “Wednesday the 23rd at 10:30 AM”. Use the supplied current timestamp and student timezone to calculate these phrases.
+
+You can create study sessions, tasks, calendar exams and subjects through actions. If the student clearly asks you to add one, include the appropriate create_study_session, create_task, create_exam or create_subject action. Actions run immediately, so never create one for a hypothetical example, a capability question or an ambiguous request. Do not create duplicates. For study sessions, provide an unambiguous ISO 8601 starts_at with timezone offset, a duration from 5 to 180 minutes, and avoid classes, existing sessions and past times. For tasks provide due_at when specified or clearly implied. For exams provide exam_at. Use empty strings and 0 for unused fields.
+
+You can also generate and save quizzes, flashcards, full mock-exam PDFs, visual-guide PDFs, document summaries, document analyses and personalized study plans; import a timetable or exam schedule from a document; and review progress. When the student clearly asks for one of these, set generation.type to the matching value. Return only one generation request at a time and do not also create unrelated actions. Infer sensible defaults: quiz 10 questions, flashcards 20 cards, mock exam 10 questions/90 minutes/60 marks, and medium or exam-standard difficulty. Use the selected document and subject when present. A summary, document analysis, timetable import, exam-schedule import or study plan requires a selected document; if none is selected, briefly ask the student to select one and leave generation.type empty. A quiz, flashcard set, mock exam or visual guide needs a selected document, selected subject or clearly named topic; if none exists, ask one short follow-up question and leave generation.type empty. Put empty strings and 0 in unused generation fields. Do not claim something was generated before the app confirms it.
+
+Use the selected source when provided and cite its filename in sources. If an answer is not supported by the source, say what is uncertain. Never claim to have read a source that was not supplied, and never delete or mark items complete.`
 }
 
 async function callOpenAI(operation, input, context, fileParts = []) {
@@ -272,7 +287,34 @@ function validateSessionWindow(startsAt, duration, context) {
   return ''
 }
 
-const dateDetail = (value, timezone) => value ? new Intl.DateTimeFormat('en-GB', { timeZone: timezone || 'UTC', weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }).format(new Date(value)) : ''
+const ordinal = value => {
+  const number = Number(value), mod100 = number % 100
+  if (mod100 >= 11 && mod100 <= 13) return `${number}th`
+  return `${number}${number % 10 === 1 ? 'st' : number % 10 === 2 ? 'nd' : number % 10 === 3 ? 'rd' : 'th'}`
+}
+
+const dateParts = (value, timezone) => {
+  const date = value instanceof Date ? value : new Date(value)
+  const options = { timeZone: timezone || 'UTC', year: 'numeric', month: 'long', day: 'numeric', weekday: 'long', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+  try { return Object.fromEntries(new Intl.DateTimeFormat('en-GB', options).formatToParts(date).map(part => [part.type, part.value])) }
+  catch { return Object.fromEntries(new Intl.DateTimeFormat('en-GB', { ...options, timeZone: 'UTC' }).formatToParts(date).map(part => [part.type, part.value])) }
+}
+
+const dateDetail = (value, timezone, now = new Date()) => {
+  if (!value || Number.isNaN(new Date(value).getTime())) return ''
+  const target = dateParts(value, timezone), current = dateParts(now, timezone)
+  const targetDay = Date.UTC(Number(target.year), new Date(`${target.month} 1, 2000`).getMonth(), Number(target.day))
+  const currentDay = Date.UTC(Number(current.year), new Date(`${current.month} 1, 2000`).getMonth(), Number(current.day))
+  const difference = Math.round((targetDay - currentDay) / 86400000)
+  const hour = Number(target.hour), minute = String(target.minute).padStart(2, '0')
+  const time = `${hour % 12 || 12}${minute === '00' ? '' : `:${minute}`} ${hour >= 12 ? 'PM' : 'AM'}`
+  if (difference === 0) return `today at ${time}`
+  if (difference === 1) return `tomorrow at ${time}`
+  if (difference > 1 && difference < 7) return `${target.weekday} the ${ordinal(target.day)} at ${time}`
+  return `${target.weekday}, ${target.month} ${ordinal(target.day)} at ${time}`
+}
+
+const humanizeAnswerDates = (text, timezone) => String(text || '').replace(/\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?(?:Z|[+-]\d{2}:?\d{2})?/g, value => dateDetail(value, timezone) || value)
 
 async function persistResult(db, userId, operation, input, context, result) {
   if (['analyzeDocument', 'generateSummary'].includes(operation)) {
@@ -422,10 +464,16 @@ async function persistResult(db, userId, operation, input, context, result) {
         skipped.push(`${title}: ${error.message || 'could not be added.'}`)
       }
     }
-    let answer = result.answer
-    if (created.length) answer = `${answer}\n\nAdded ${created.length} item${created.length === 1 ? '' : 's'} to your workspace.`
-    if (skipped.length) answer = `${answer}\n\nI did not add: ${skipped.join(' ')}`
-    return { answer, sources: result.sources || [], created }
+    let answer = humanizeAnswerDates(result.answer, timezone)
+    if (created.length === 1) {
+      const item = created[0], named = `“${item.title}”`
+      if (item.kind === 'study_session') answer = `Done — ${named} is set for ${item.detail}.`
+      else if (item.kind === 'task') answer = `Done — I added ${named}${item.detail?.startsWith('Due ') ? `, due ${item.detail.slice(4)}` : ''}.`
+      else if (item.kind === 'exam') answer = `Done — I added ${named} for ${item.detail}.`
+      else answer = `Done — I added ${named}.`
+    } else if (created.length > 1) answer = `Done — I added ${created.length} things to your workspace.`
+    if (skipped.length) answer = `${answer ? `${answer} ` : ''}I couldn’t add ${skipped.join(' ')}`
+    return { answer, sources: result.sources || [], created, generation: result.generation || null }
   }
   return result
 }
