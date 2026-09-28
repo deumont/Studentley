@@ -23,6 +23,53 @@ function SetupRequired({ error }) {
 
 const PracticeLabel = ({ player }) => player?.is_practice_rival ? <em className="practice-rival-badge"><Shield /> Practice Rival</em> : null
 
+const matchmakingSteps = ['Finding opponent', 'Opponent found', 'Preparing arena', 'Assembling questions']
+
+function MatchmakingPanel({ match, onCancel, error = '' }) {
+  const mountedAt = useRef(Date.now())
+  const [now, setNow] = useState(Date.now())
+  const [statusStartedAt, setStatusStartedAt] = useState(Date.now())
+  const [cancelling, setCancelling] = useState(false)
+  useEffect(() => {
+    mountedAt.current = Date.now()
+    setNow(Date.now())
+  }, [match.id])
+  useEffect(() => {
+    setStatusStartedAt(Date.now())
+  }, [match.id, match.status])
+  useEffect(() => {
+    const timer = setInterval(() => setNow(Date.now()), 1000)
+    return () => clearInterval(timer)
+  }, [])
+
+  const createdAt = Date.parse(match.created_at || '')
+  const elapsed = now - (Number.isFinite(createdAt) ? createdAt : mountedAt.current)
+  const phaseSeconds = Math.max(0, Math.floor((now - statusStartedAt) / 1000))
+  const activeStep = match.status === 'waiting' ? 0 : phaseSeconds < 3 ? 1 : phaseSeconds < 7 ? 2 : 3
+  const title = activeStep === 0 ? 'Finding your Rival…' : activeStep === 1 ? 'Opponent found!' : activeStep === 2 ? 'Preparing arena…' : 'Assembling questions…'
+  const description = activeStep === 0
+    ? 'Searching for a student near your rating. Your timer keeps running while we build a fair match.'
+    : activeStep === 1
+      ? 'Your opponent is ready. Locking in the same rules and conditions for both players.'
+      : activeStep === 2
+        ? 'Setting up your shared arena and checking the match conditions.'
+        : 'Creating and checking one identical standardized quiz for both players.'
+
+  return <section className="rivals-matchmaking">
+    <div className={`matchmaking-radar ${match.status === 'generating' ? 'found' : ''}`}><span /><span /><span />{match.status === 'generating' ? <Sparkles /> : <Swords />}</div>
+    <span className="rivals-kicker">Ranked matchmaking</span>
+    <h1 key={title} className="matchmaking-title">{title}</h1>
+    <p>{description}</p>
+    <div className="matchmaking-stopwatch" aria-label={`Matchmaking time ${formatTime(elapsed)}`}><Clock3 /><span><small>Matchmaking time</small><strong>{formatTime(elapsed)}</strong></span></div>
+    <ol className="matchmaking-steps" aria-label="Matchmaking progress" aria-live="polite">
+      {matchmakingSteps.map((step, index) => <li className={index < activeStep ? 'done' : index === activeStep ? 'active' : ''} key={step}><span>{index < activeStep ? <Check /> : index + 1}</span><b>{step}</b></li>)}
+    </ol>
+    <div className="matchmaking-tags"><span>{match.subject}</span><span>{match.topic}</span><span>{match.level}</span>{match.difficulty && <span>{match.difficulty}</span>}</div>
+    {error && <ErrorState text={error} />}
+    <Button variant="ghost" loading={cancelling} onClick={async () => { setCancelling(true); try { await onCancel() } finally { setCancelling(false) } }}>Cancel search</Button>
+  </section>
+}
+
 export default function RivalsDashboard() {
   const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const load = async () => { setLoading(true); setError(''); try { setData(await loadRivalsDashboard()) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
@@ -52,7 +99,7 @@ export function RankedRivals() {
   useEffect(() => { if (!match || !['waiting','generating'].includes(match.status)) return; const timer = setInterval(() => loadRivalMatch(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), 2500); return () => clearInterval(timer) }, [match?.id, match?.status, navigate])
   useEffect(() => { if (!match || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), 8000); return () => clearTimeout(timer) }, [match?.id, match?.status, navigate])
   const queue = async event => { event.preventDefault(); setLoading(true); setError(''); try { const result = await queueRankedBattle({ topicId, level, difficulty }); setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
-  if (match && ['waiting','generating'].includes(match.status)) return <section className="rivals-matchmaking"><div className="matchmaking-radar"><span /><span /><span /><Swords /></div><span className="rivals-kicker">Ranked matchmaking</span><h1>{match.status === 'generating' ? 'Opponent found!' : 'Finding your Rival…'}</h1><p>{match.status === 'generating' ? 'Creating one fair, standardized quiz for both players.' : 'Searching for a student near your rating. If nobody joins shortly, a Practice Rival will step in.'}</p><div className="matchmaking-tags"><span>{match.subject}</span><span>{match.topic}</span><span>{match.level}</span><span>{match.difficulty}</span></div><Button variant="ghost" onClick={async () => { await cancelRivalMatch(match.id); setMatch(null) }}>Cancel search</Button></section>
+  if (match && ['waiting','generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); setMatch(null) }} />
   return <>
     <div className="rivals-page-heading"><div><span className="rivals-kicker"><Trophy /> Ranked mode</span><h1>Prove what you know.</h1><p>Uploaded documents are never used here. Every matchup comes from Studentley’s standardized topic bank.</p></div><div className="ranked-rules"><b>Correctness first</b><span>Speed breaks ties</span><small>Opponent gets 20 seconds after the first finish</small></div></div>
     {error && (error.includes('migration') ? <SetupRequired error={error} /> : <ErrorState text={error} />)}
@@ -118,9 +165,9 @@ export function RivalMatch() {
   if (error && !match) return <><ErrorState text={error} /><Button onClick={() => navigate('/rivals')}>Back to Rivals</Button></>
   if (!match) return null
   const me = match.players.find(player => player.is_current_user)
-  if (match.status === 'waiting' && match.mode === 'ranked') return <section className="rivals-matchmaking"><div className="matchmaking-radar"><span /><span /><span /><Swords /></div><span className="rivals-kicker">Ranked matchmaking</span><h1>Finding your Rival…</h1><p>Searching for a student near your rating. If nobody joins shortly, a Practice Rival will step in.</p><div className="matchmaking-tags"><span>{match.subject}</span><span>{match.topic}</span><span>{match.level}</span></div><Button variant="ghost" onClick={async () => { await cancelRivalMatch(match.id); navigate('/rivals/ranked') }}>Cancel search</Button></section>
+  if (match.mode === 'ranked' && ['waiting', 'generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); navigate('/rivals/ranked') }} />
   if (match.status === 'waiting') return <FriendLobby match={match} onStart={async () => { setLoading(true); try { setMatch((await startFriendRoom(match.id)).match) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }} loading={loading} error={error} />
-  if (match.status === 'generating') return <section className="rivals-matchmaking"><div className="matchmaking-radar"><span /><span /><span /><Sparkles /></div><h1>Preparing your identical quiz…</h1><p>Both Rivals will start with the same questions and conditions.</p></section>
+  if (match.status === 'generating') return <Loader label="Preparing the battle…" />
   if (match.status === 'completed') return <BattleResult match={match} onExit={() => navigate('/rivals')} />
   if (me?.submitted_at) return <section className="rivals-wait-result"><div className="matchmaking-radar compact"><span /><span /><span /><Check /></div><span className="rivals-kicker">Answers locked</span><h1>You finished with {me.correct_answers}/{match.question_count} correct.</h1><p>{match.finish_deadline ? 'Your opponents have up to 20 seconds to finish.' : 'Calculating the final result…'}</p><div className="rivals-player-pills">{match.players.map(player => <span className={player.submitted_at ? 'done' : ''} key={player.player_key}><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} />{player.display_name}<PracticeLabel player={player} />{player.submitted_at && <Check />}</span>)}</div></section>
   return <RivalArena match={match} onUpdate={setMatch} />

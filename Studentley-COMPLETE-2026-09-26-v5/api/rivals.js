@@ -20,12 +20,13 @@ const practiceInitials = ['B.', 'C.', 'F.', 'H.', 'K.', 'L.', 'M.', 'R.', 'S.', 
 const randomBetween = (minimum, maximum) => Math.floor(minimum + Math.random() * (maximum - minimum + 1))
 
 async function ensureRivalProfile(db, userId) {
-  const { data, error } = await db.from('rival_profiles').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }).select().maybeSingle()
+  const { data, error } = await db.from('rival_profiles').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }).select().limit(1)
   if (error) throw error
-  if (data) return data
-  const { data: existing, error: readError } = await db.from('rival_profiles').select('*').eq('user_id', userId).single()
+  if (data?.[0]) return data[0]
+  const { data: existing, error: readError } = await db.from('rival_profiles').select('*').eq('user_id', userId).limit(1)
   if (readError) throw readError
-  return existing
+  if (existing?.[0]) return existing[0]
+  throw Object.assign(new Error('Your Rivals profile could not be prepared. Please try matchmaking again.'), { status: 409 })
 }
 
 async function profileMap(db, userIds) {
@@ -87,6 +88,25 @@ async function getMatchRecord(db, matchId) {
   if (error) throw error
   if (!data) throw Object.assign(new Error('Battle not found.'), { status: 404 })
   return data
+}
+
+async function activateRankedMatch(db, matchId, generated) {
+  const startedAt = new Date().toISOString()
+  const { data, error } = await db.from('rival_matches').update({
+    title: generated.title,
+    quiz: generated.items,
+    question_count: generated.items.length,
+    status: 'active',
+    started_at: startedAt,
+  }).eq('id', matchId).eq('status', 'generating').select().maybeSingle()
+  if (error) throw error
+  if (data) return data
+
+  // Another request may have completed this transition while quiz generation was running.
+  // Read the current state instead of asking PostgREST to coerce an empty result to one object.
+  const current = await getMatchRecord(db, matchId)
+  if (current.status === 'active') return current
+  throw Object.assign(new Error('This matchmaking request ended before the arena was ready. Please search again.'), { status: 409 })
 }
 
 async function getPlayers(db, matchId) {
@@ -211,6 +231,7 @@ async function serializeMatch(db, match, userId) {
     level: match.level,
     difficulty: match.difficulty,
     status: match.status,
+    created_at: match.created_at,
     room_code: match.room_code,
     question_count: match.question_count,
     max_players: match.max_players,
@@ -308,17 +329,16 @@ async function queueRanked(db, userId, input) {
     if (joinError) throw joinError
     try {
       const generated = await generateRankedQuiz(topic, level, difficulty, 10)
-      const startedAt = new Date().toISOString()
-      const { data: active, error: activateError } = await db.from('rival_matches').update({ title: generated.title, quiz: generated.items, question_count: generated.items.length, status: 'active', started_at: startedAt }).eq('id', claimed.id).select().single()
-      if (activateError) throw activateError
+      const active = await activateRankedMatch(db, claimed.id, generated)
       return { match: await serializeMatch(db, active, userId) }
     } catch (generationError) {
       await db.from('rival_matches').update({ status: 'cancelled' }).eq('id', claimed.id)
       throw generationError
     }
   }
-  const { data: match, error: createError } = await db.from('rival_matches').insert({ mode: 'ranked', host_user_id: userId, topic_id: topic.id, subject: topic.subject, topic: topic.topic, level, difficulty, title: `${topic.topic} ranked battle`, rating_band: rivalProfile.rating, question_count: 10 }).select().single()
+  const { data: match, error: createError } = await db.from('rival_matches').insert({ mode: 'ranked', host_user_id: userId, topic_id: topic.id, subject: topic.subject, topic: topic.topic, level, difficulty, title: `${topic.topic} ranked battle`, rating_band: rivalProfile.rating, question_count: 10 }).select().maybeSingle()
   if (createError) throw createError
+  if (!match) throw Object.assign(new Error('Matchmaking could not create a queue entry. Please try again.'), { status: 409 })
   const { error: playerError } = await db.from('rival_match_players').insert({ match_id: match.id, user_id: userId, rating_before: rivalProfile.rating })
   if (playerError) throw playerError
   return { match: await serializeMatch(db, match, userId) }
@@ -357,9 +377,7 @@ async function addPracticeRival(db, userId, input) {
       answers,
     })
     if (botError) throw botError
-    const startedAt = new Date().toISOString()
-    const { data: active, error: activateError } = await db.from('rival_matches').update({ title: generated.title, quiz: generated.items, question_count: generated.items.length, status: 'active', started_at: startedAt }).eq('id', claimed.id).eq('status', 'generating').select().single()
-    if (activateError) throw activateError
+    const active = await activateRankedMatch(db, claimed.id, generated)
     return { match: await serializeMatch(db, active, userId) }
   } catch (error) {
     await db.from('rival_matches').update({ status: 'cancelled' }).eq('id', claimed.id).eq('status', 'generating')
