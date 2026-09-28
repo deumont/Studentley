@@ -376,7 +376,7 @@ async function createFriendRoom(db, userId, input) {
   let match
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const code = roomCode()
-    const created = await db.from('rival_matches').insert({ mode: 'friend', host_user_id: userId, subject: safeText(input.subject || practiceSet.config?.subjectName || 'Study material', 80), topic: safeText(input.topic || practiceSet.config?.topic || 'Custom material', 120), level: safeText(input.level || 'Mixed', 40), difficulty: safeText(input.difficulty || practiceSet.config?.difficulty || 'Mixed', 40), title: safeText(input.title || practiceSet.title, 120), quiz: practiceSet.items, question_count: practiceSet.items.length, max_players: Math.max(2, Math.min(Number(input.maxPlayers) || 4, 8)), room_code: code }).select().single()
+    const created = await db.from('rival_matches').insert({ mode: 'friend', host_user_id: userId, subject: safeText(input.subject || practiceSet.config?.subjectName || 'Study material', 80), topic: safeText(input.topic || practiceSet.config?.topic || 'Custom material', 120), level: safeText(input.level || 'Mixed', 40), difficulty: safeText(input.difficulty || practiceSet.config?.difficulty || 'Mixed', 40), title: safeText(input.title || practiceSet.title, 120), quiz: practiceSet.items, question_count: practiceSet.items.length, max_players: Math.max(2, Math.min(Number(input.maxPlayers) || 8, 8)), room_code: code }).select().single()
     if (!created.error) { match = created.data; break }
     if (created.error.code !== '23505') throw created.error
   }
