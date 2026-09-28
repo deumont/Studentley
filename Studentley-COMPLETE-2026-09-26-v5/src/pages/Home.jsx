@@ -32,7 +32,7 @@ export default function Home() {
   }
   const completeSession = async session => { await update('study_sessions', session.id, { completed_at: session.completed_at ? null : new Date().toISOString() }); notify(session.completed_at ? copy.reopened : copy.completed) }
   return <>
-    <div className="dashboard-greeting"><span className="sun-orb">☀</span><div><h1>{copy.greeting}, {name}</h1><p>{todayTasks.length || todaySessions.length ? copy.ready : copy.shape}</p></div><time><CalendarDays />{formatDate(new Date(), { weekday: 'short' })}</time></div>
+    <div className="dashboard-greeting"><div><h1>{copy.greeting}, {name}</h1><p>{todayTasks.length || todaySessions.length ? copy.ready : copy.shape}</p></div><time><CalendarDays />{formatDate(new Date(), { weekday: 'short' })}</time></div>
     <section className="metric-row">
       <Metric tone="blue" icon={ListTodo} label={copy.tasks} value={todayTasks.length} hint={copy.due} />
       <Metric tone="green" icon={Target} label={copy.progress} value={progress === null ? '—' : `${progress}%`} hint={progress === null ? copy.plan : copy.todayPlan} />
