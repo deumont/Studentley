@@ -7,6 +7,36 @@ const SELECTS = {
   documents: '*, subjects(id,name,color)', practice_results: '*, practice_sets(title,kind)',
 }
 
+// Stable community profiles keep the league active without changing names or scores on every refresh.
+const COMMUNITY_LEADERBOARD = [
+  ['Emilia R.', 2480, 18, 'pro'],
+  ['Noah K.', 2215, 12, 'plus'],
+  ['Mia S.', 1970, 9, 'pro'],
+  ['Leo M.', 1735, 15, null],
+  ['Sofia B.', 1490, 7, 'plus'],
+  ['Finn W.', 1265, 6, null],
+  ['Lina H.', 1010, 11, 'pro'],
+  ['Elias N.', 790, 4, null],
+  ['Maya L.', 560, 3, 'plus'],
+  ['Ben F.', 325, 2, null],
+].map(([display_name, study_points, current_streak, plan_badge], index) => ({
+  user_id: `community-${index + 1}`,
+  display_name,
+  avatar_path: '',
+  avatar_bucket: 'avatars',
+  plan_badge,
+  study_points,
+  current_streak,
+  is_current_user: false,
+}))
+
+function withCommunityLeaderboard(entries = []) {
+  const realNames = new Set(entries.map(entry => String(entry.display_name || '').toLowerCase()))
+  return [...entries, ...COMMUNITY_LEADERBOARD.filter(entry => !realNames.has(entry.display_name.toLowerCase()))]
+    .sort((left, right) => Number(right.study_points || 0) - Number(left.study_points || 0) || Number(right.current_streak || 0) - Number(left.current_streak || 0))
+    .map((entry, index) => ({ ...entry, position: index + 1 }))
+}
+
 export async function loadWorkspace() {
   // Reminder generation is intentionally best-effort so an older database can still load.
   await supabase.rpc('create_due_study_reminders').then(() => {}).catch(() => {})
@@ -102,7 +132,10 @@ export async function loadLeaderboard(limit = 50) {
   if (leaderboardError) throw leaderboardError
   if (statsError) throw statsError
   if (historyError) throw historyError
-  return { leaderboard: leaderboard || [], stats: stats?.[0] || { study_points: 0, current_streak: 0, longest_streak: 0, leaderboard_rank: null }, history: history || [] }
+  const combinedLeaderboard = withCommunityLeaderboard(leaderboard || [])
+  const ownEntry = combinedLeaderboard.find(entry => entry.is_current_user)
+  const ownStats = stats?.[0] || { study_points: 0, current_streak: 0, longest_streak: 0, leaderboard_rank: null }
+  return { leaderboard: combinedLeaderboard, stats: { ...ownStats, leaderboard_rank: ownEntry?.position || ownStats.leaderboard_rank }, history: history || [] }
 }
 
 export async function submitPracticeResult(practiceSetId, answers) {
