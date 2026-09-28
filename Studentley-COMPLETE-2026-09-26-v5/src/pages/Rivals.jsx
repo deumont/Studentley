@@ -16,6 +16,16 @@ const difficulties = ['Accessible', 'Exam standard', 'Challenging']
 const friendRoomSizes = [2, 3, 4, 5, 6, 7, 8]
 const rankColor = rank => tiers.find(([name]) => name === rank)?.[2] || '#16a36f'
 const formatTime = milliseconds => { const seconds = Math.max(0, Math.floor(Number(milliseconds || 0) / 1000)); return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}` }
+const practiceRivalDelay = matchId => {
+  let hash = 2166136261
+  for (const character of String(matchId || '')) hash = Math.imul(hash ^ character.charCodeAt(0), 16777619)
+  return 25000 + (hash >>> 0) % 15001
+}
+const practiceRivalWait = match => {
+  const createdAt = Date.parse(match?.created_at || '')
+  const elapsed = Number.isFinite(createdAt) ? Math.max(0, Date.now() - createdAt) : 0
+  return Math.max(0, practiceRivalDelay(match?.id) - elapsed)
+}
 
 function SetupRequired({ error }) {
   return <section className="rivals-setup card"><LockKeyhole /><span><b>Rivals database setup required</b><p>{error || 'Run the Studentley Rivals migrations in Supabase before opening competitive mode.'}</p><code>202609270005_studentley_rivals.sql + 202609270006_rivals_practice_opponents.sql</code></span></section>
@@ -97,7 +107,7 @@ export function RankedRivals() {
   const subjects = [...new Set(topics.map(item => item.subject))], availableTopics = topics.filter(item => item.subject === subject), selectedTopic = topics.find(item => item.id === topicId)
   useEffect(() => { if (!availableTopics.some(item => item.id === topicId) && availableTopics[0]) { setTopicId(availableTopics[0].id); setLevel(availableTopics[0].levels.includes(level) ? level : availableTopics[0].levels[0]) } }, [subject, topics])
   useEffect(() => { if (!match || !['waiting','generating'].includes(match.status)) return; const timer = setInterval(() => loadRivalMatch(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), 2500); return () => clearInterval(timer) }, [match?.id, match?.status, navigate])
-  useEffect(() => { if (!match || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), 8000); return () => clearTimeout(timer) }, [match?.id, match?.status, navigate])
+  useEffect(() => { if (!match || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), practiceRivalWait(match)); return () => clearTimeout(timer) }, [match?.id, match?.status, match?.created_at, navigate])
   const queue = async event => { event.preventDefault(); setLoading(true); setError(''); try { const result = await queueRankedBattle({ topicId, level, difficulty }); setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
   if (match && ['waiting','generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); setMatch(null) }} />
   return <>
@@ -160,7 +170,7 @@ export function RivalMatch() {
   const load = useCallback(async () => { try { const result = await loadRivalMatch(id); setMatch(result.match); setError('') } catch (problem) { setError(problem.message) } finally { setLoading(false) } }, [id])
   useEffect(() => { document.title = 'Live Battle — Studentley Rivals'; load() }, [load])
   useEffect(() => { if (!match || match.status === 'completed' || match.status === 'cancelled') return; const timer = setInterval(load, 2000); return () => clearInterval(timer) }, [match?.status, load])
-  useEffect(() => { if (!match || match.mode !== 'ranked' || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => setMatch(result.match)).catch(problem => setError(problem.message)), 8000); return () => clearTimeout(timer) }, [match?.id, match?.mode, match?.status])
+  useEffect(() => { if (!match || match.mode !== 'ranked' || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => setMatch(result.match)).catch(problem => setError(problem.message)), practiceRivalWait(match)); return () => clearTimeout(timer) }, [match?.id, match?.mode, match?.status, match?.created_at])
   if (loading && !match) return <Loader label="Entering the arena…" />
   if (error && !match) return <><ErrorState text={error} /><Button onClick={() => navigate('/rivals')}>Back to Rivals</Button></>
   if (!match) return null
