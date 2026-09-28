@@ -2,7 +2,7 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Mic, MicOff, Send, Sparkles, Trash2, UserRoundCog, Volume2, VolumeX } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
-import { askPersonalAssistant } from '../services/ai'
+import { askPersonalAssistant, getPersonalAIAudio } from '../services/ai'
 import { Button, PageHeading } from '../components/UI'
 
 const starters = [
@@ -58,6 +58,7 @@ export default function PersonalAI() {
   const [listening, setListening] = useState(false)
   const [voiceError, setVoiceError] = useState('')
   const [speakingIndex, setSpeakingIndex] = useState(null)
+  const [voiceLoadingIndex, setVoiceLoadingIndex] = useState(null)
   const [messages, setMessages] = useState(() => loadConversation(user?.id))
   const endRef = useRef(null)
   const recognitionRef = useRef(null)
@@ -67,12 +68,16 @@ export default function PersonalAI() {
   const finalTranscriptRef = useRef('')
   const voicesRef = useRef([])
   const speechSessionRef = useRef(0)
+  const speechRequestRef = useRef(null)
+  const audioContextRef = useRef(null)
+  const audioSourceRef = useRef(null)
+  const audioCacheRef = useRef(new Map())
   const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
   const mobileVoiceEnabled = mobileDevice()
   const voiceInputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
-  const voiceOutputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance)
+  const voiceOutputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.AudioContext || window.webkitAudioContext)
 
   useEffect(() => { document.title = 'Personal AI — Studentley' }, [])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -100,17 +105,20 @@ export default function PersonalAI() {
     navigate('/personal-ai', { replace: true })
   }, [location.state, navigate, refresh])
   useEffect(() => {
-    if (!voiceOutputSupported) return undefined
+    if (!mobileVoiceEnabled || !window.speechSynthesis) return undefined
     const refreshVoices = () => { voicesRef.current = window.speechSynthesis.getVoices() }
     refreshVoices()
     window.speechSynthesis.addEventListener?.('voiceschanged', refreshVoices)
     return () => window.speechSynthesis.removeEventListener?.('voiceschanged', refreshVoices)
-  }, [voiceOutputSupported])
+  }, [mobileVoiceEnabled])
   useEffect(() => () => {
     keepListeningRef.current = false
     clearTimeout(recognitionRestartRef.current)
     recognitionRef.current?.abort()
     speechSessionRef.current += 1
+    speechRequestRef.current?.abort()
+    try { audioSourceRef.current?.stop() } catch { /* Audio may already be stopped. */ }
+    audioContextRef.current?.close?.()
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
   }, [])
 
@@ -183,17 +191,23 @@ export default function PersonalAI() {
     startRecognitionSession()
   }
 
-  const speakMessage = (text, index) => {
-    if (!voiceOutputSupported) return
-    if (speakingIndex === index) {
-      speechSessionRef.current += 1
-      window.speechSynthesis.cancel()
+  const stopVoicePlayback = () => {
+    speechSessionRef.current += 1
+    speechRequestRef.current?.abort()
+    speechRequestRef.current = null
+    try { audioSourceRef.current?.stop() } catch { /* Audio may already be stopped. */ }
+    audioSourceRef.current = null
+    window.speechSynthesis?.cancel()
+    setSpeakingIndex(null)
+    setVoiceLoadingIndex(null)
+  }
+
+  const playDeviceVoiceFallback = (text, index, session) => {
+    if (!window.speechSynthesis || !window.SpeechSynthesisUtterance || speechSessionRef.current !== session) {
       setSpeakingIndex(null)
+      setVoiceLoadingIndex(null)
       return
     }
-    window.speechSynthesis.cancel()
-    const session = speechSessionRef.current + 1
-    speechSessionRef.current = session
     const chunks = speechChunks(text)
     const availableVoices = voicesRef.current.length ? voicesRef.current : window.speechSynthesis.getVoices()
     const preferredVoice = [...availableVoices].sort((left, right) => {
@@ -219,11 +233,58 @@ export default function PersonalAI() {
       utterance.rate = 0.9
       utterance.pitch = 1
       utterance.onend = () => speakChunk(chunkIndex + 1)
-      utterance.onerror = () => setSpeakingIndex(null)
+      utterance.onerror = () => { setSpeakingIndex(null); setVoiceLoadingIndex(null) }
       window.speechSynthesis.speak(utterance)
     }
+    setVoiceLoadingIndex(null)
     setSpeakingIndex(index)
     speakChunk(0)
+  }
+
+  const speakMessage = async (text, index) => {
+    if (!voiceOutputSupported) return
+    if (speakingIndex === index || voiceLoadingIndex === index) {
+      stopVoicePlayback()
+      return
+    }
+    stopVoicePlayback()
+    const session = speechSessionRef.current + 1
+    speechSessionRef.current = session
+    setVoiceLoadingIndex(index)
+    const request = new AbortController()
+    speechRequestRef.current = request
+    try {
+      const AudioContext = window.AudioContext || window.webkitAudioContext
+      const audioContext = audioContextRef.current || new AudioContext()
+      audioContextRef.current = audioContext
+      if (audioContext.state === 'suspended') await audioContext.resume()
+      const cacheKey = cleanSpeechText(text)
+      let audioBuffer = audioCacheRef.current.get(cacheKey)
+      if (!audioBuffer) {
+        const audioData = await getPersonalAIAudio(cacheKey, request.signal)
+        if (speechSessionRef.current !== session) return
+        audioBuffer = await audioContext.decodeAudioData(audioData.slice(0))
+        audioCacheRef.current.set(cacheKey, audioBuffer)
+      }
+      if (speechSessionRef.current !== session) return
+      const source = audioContext.createBufferSource()
+      source.buffer = audioBuffer
+      source.connect(audioContext.destination)
+      source.onended = () => {
+        if (speechSessionRef.current !== session) return
+        audioSourceRef.current = null
+        setSpeakingIndex(null)
+      }
+      audioSourceRef.current = source
+      speechRequestRef.current = null
+      setVoiceLoadingIndex(null)
+      setSpeakingIndex(index)
+      source.start(0)
+    } catch (error) {
+      speechRequestRef.current = null
+      if (error.name === 'AbortError' || speechSessionRef.current !== session) return
+      playDeviceVoiceFallback(text, index, session)
+    }
   }
 
   const send = async event => {
@@ -246,8 +307,7 @@ export default function PersonalAI() {
 
   const reset = () => {
     stopListening(true)
-    speechSessionRef.current += 1
-    window.speechSynthesis?.cancel()
+    stopVoicePlayback()
     if (user?.id) localStorage.removeItem(conversationKey(user.id))
     setMessages([welcome])
     setQuestion('')
@@ -273,7 +333,7 @@ export default function PersonalAI() {
         <div className="tutor-messages" aria-live="polite">
           {messages.map((message, index) => <div className={`tutor-message ${message.role} ${message.unavailable ? 'unavailable' : ''}`} key={`${message.role}-${index}`}>
             {message.role === 'assistant' && <span><Bot /></span>}
-            <div><p>{message.text}</p>{message.role === 'assistant' && voiceOutputSupported && <button type="button" className={`tutor-speak-button ${speakingIndex === index ? 'speaking' : ''}`} onClick={() => speakMessage(message.text, index)} aria-label={speakingIndex === index ? 'Stop reading response' : 'Read response aloud'} title={speakingIndex === index ? 'Stop reading' : 'Read aloud'}>{speakingIndex === index ? <VolumeX /> : <Volume2 />}{speakingIndex === index ? 'Stop' : 'Listen'}</button>}{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span><CheckCircle2 /></article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again. No workspace item was added.</small>}</div>
+            <div><p>{message.text}</p>{message.role === 'assistant' && voiceOutputSupported && <button type="button" className={`tutor-speak-button ${speakingIndex === index || voiceLoadingIndex === index ? 'speaking' : ''}`} onClick={() => speakMessage(message.text, index)} aria-label={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read response aloud'} title={speakingIndex === index || voiceLoadingIndex === index ? 'Stop voice playback' : 'Read aloud'}>{speakingIndex === index || voiceLoadingIndex === index ? <VolumeX /> : <Volume2 />}{voiceLoadingIndex === index ? 'Preparing…' : speakingIndex === index ? 'Stop' : 'Listen'}</button>}{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span><CheckCircle2 /></article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again. No workspace item was added.</small>}</div>
           </div>)}
           {messages.length === 1 && <div className="tutor-starters">{starters.map(starter => <button key={starter} onClick={() => setQuestion(starter)}><Sparkles />{starter}</button>)}</div>}
           {sending && <div className="tutor-message assistant typing"><span><Bot /></span><div><i /><i /><i /></div></div>}
@@ -287,7 +347,7 @@ export default function PersonalAI() {
           {mobileVoiceEnabled && <button type="button" className={`voice-input-button ${listening ? 'listening' : ''}`} onClick={toggleListening} disabled={sending || !voiceInputSupported} aria-label={listening ? 'Stop listening' : 'Speak to your personal AI'} title={voiceInputSupported ? (listening ? 'Stop listening' : 'Speak to your AI') : 'Voice input is not supported by this browser'}>{listening ? <MicOff /> : <Mic />}</button>}
           <Button loading={sending} disabled={!question.trim()} aria-label="Send request"><Send /></Button>
         </form>
-        <footer>Conversation saved in this browser. Your AI can make mistakes, so check important details and dates.</footer>
+        <footer>Conversation saved in this browser. Your AI can make mistakes, so check important details and dates.{mobileVoiceEnabled && ' Voice playback is AI-generated.'}</footer>
       </section>
     </div>
   </>

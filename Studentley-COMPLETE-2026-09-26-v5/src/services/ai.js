@@ -89,3 +89,19 @@ export const generateStudyPlan = input => requestAI(AI_OPERATIONS.GENERATE_STUDY
 export const analyzeProgress = input => requestAI(AI_OPERATIONS.ANALYZE_PROGRESS, input)
 export const markMockExam = input => requestAI(AI_OPERATIONS.MARK_MOCK_EXAM, input)
 export const askPersonalAssistant = input => requestAI(AI_OPERATIONS.PERSONAL_ASSISTANT, input)
+
+export async function getPersonalAIAudio(text, signal) {
+  const { data } = await supabase.auth.getSession()
+  const response = await fetch('/api/speech', {
+    method: 'POST',
+    signal,
+    headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` },
+    body: JSON.stringify({ text }),
+  })
+  if (!response.ok) {
+    let message = 'Natural voice is temporarily unavailable.'
+    try { message = (await response.json()).error || message } catch { /* The server may return a non-JSON error. */ }
+    throw new Error(message)
+  }
+  return response.arrayBuffer()
+}
