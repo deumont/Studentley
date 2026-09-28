@@ -280,9 +280,11 @@ async function dashboard(db, userId) {
   for (const match of matches || []) history.push(await serializeMatch(db, match, userId))
   const { data: leaders, error: leaderError } = await db.from('rival_profiles').select('*').order('rating', { ascending: false }).limit(20)
   if (leaderError) throw leaderError
+  const { count: playersAbove, error: positionError } = await db.from('rival_profiles').select('user_id', { count: 'exact', head: true }).gt('rating', profile.rating)
+  if (positionError) throw positionError
   const profiles = await profileMap(db, (leaders || []).map(item => item.user_id))
   const leaderboard = (leaders || []).map((item, index) => ({ position: index + 1, user_id: item.user_id, display_name: safeText(profiles.get(item.user_id)?.display_name || 'Student', 80).split(' ')[0], avatar_path: profiles.get(item.user_id)?.leaderboard_visible === false ? '' : profiles.get(item.user_id)?.avatar_path || '', avatar_bucket: profiles.get(item.user_id)?.avatar_bucket || 'avatars', rating: item.rating, rank: rankFor(item.rating), wins: item.ranked_wins, losses: item.ranked_losses, is_current_user: item.user_id === userId }))
-  return { profile: { ...profile, rank: rankFor(profile.rating) }, history, active_match: history.find(item => ACTIVE_STATUSES.includes(item.status)) || null, leaderboard }
+  return { profile: { ...profile, rank: rankFor(profile.rating), position: Number(playersAbove || 0) + 1 }, history, active_match: history.find(item => ACTIVE_STATUSES.includes(item.status)) || null, leaderboard }
 }
 
 async function queueRanked(db, userId, input) {

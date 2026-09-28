@@ -1,5 +1,5 @@
 import { supabase } from './supabase'
-import { withCommunityStudyLeaderboard } from './communityProfiles'
+import { COMMUNITY_PROFILES, withCommunityStudyLeaderboard } from './communityProfiles'
 
 const TABLES = ['profiles', 'subjects', 'tasks', 'exams', 'study_sessions', 'timetable_entries', 'documents', 'notifications', 'achievements', 'subscriptions', 'practice_sets', 'practice_results']
 const SELECTS = {
@@ -106,7 +106,9 @@ export async function loadLeaderboard(limit = 50) {
   const combinedLeaderboard = withCommunityStudyLeaderboard(leaderboard || [])
   const ownEntry = combinedLeaderboard.find(entry => entry.is_current_user)
   const ownStats = stats?.[0] || { study_points: 0, current_streak: 0, longest_streak: 0, leaderboard_rank: null }
-  return { leaderboard: combinedLeaderboard, stats: { ...ownStats, leaderboard_rank: ownEntry?.position || ownStats.leaderboard_rank }, history: history || [] }
+  const communityAbove = COMMUNITY_PROFILES.filter(entry => Number(entry.study_points || 0) > Number(ownStats.study_points || 0)).length
+  const adjustedRank = ownEntry?.position || (ownStats.leaderboard_rank ? Number(ownStats.leaderboard_rank) + communityAbove : null)
+  return { leaderboard: combinedLeaderboard, stats: { ...ownStats, leaderboard_rank: adjustedRank }, history: history || [] }
 }
 
 export async function submitPracticeResult(practiceSetId, answers) {

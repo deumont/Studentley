@@ -1,5 +1,5 @@
 import { supabase } from '../lib/supabase'
-import { withCommunityRivalsLeaderboard } from '../lib/communityProfiles'
+import { COMMUNITY_PROFILES, withCommunityRivalsLeaderboard } from '../lib/communityProfiles'
 
 async function rivalsRequest(action, input = {}) {
   const { data } = await supabase.auth.getSession()
@@ -17,7 +17,11 @@ async function rivalsRequest(action, input = {}) {
 
 export const loadRivalsDashboard = async () => {
   const result = await rivalsRequest('dashboard')
-  return { ...result, leaderboard: withCommunityRivalsLeaderboard(result.leaderboard || []) }
+  const leaderboard = withCommunityRivalsLeaderboard(result.leaderboard || [])
+  const ownEntry = leaderboard.find(entry => entry.is_current_user)
+  const communityAbove = COMMUNITY_PROFILES.filter(entry => Number(entry.rating || 0) > Number(result.profile?.rating || 0)).length
+  const leaderboardPosition = ownEntry?.position || (result.profile?.position ? Number(result.profile.position) + communityAbove : null)
+  return { ...result, profile: { ...result.profile, leaderboard_position: leaderboardPosition }, leaderboard }
 }
 export const loadRivalTopics = () => rivalsRequest('topics')
 export const queueRankedBattle = input => rivalsRequest('queue_ranked', input)

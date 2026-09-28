@@ -6,6 +6,7 @@ const activityLabels = {
   analyzeDocument: 'Analyzing document', analyzeTimetable: 'Reading timetable', extractExamSchedule: 'Reading exam schedule',
   generateQuiz: 'Generating quiz', generateFlashcards: 'Generating flashcards', generateSummary: 'Generating summary',
   generateMockExam: 'Generating mock exam', generateStudyPlan: 'Generating study plan', analyzeProgress: 'Analyzing progress',
+  generateVisualExplanation: 'Designing visual explanation',
   markMockExam: 'Marking completed exam', personalAssistant: 'Your personal AI is working',
 }
 
@@ -22,7 +23,7 @@ function startActivity(operation) {
 }
 
 function targetFor(operation, input, result) {
-  if (['generateQuiz', 'generateFlashcards', 'generateMockExam'].includes(operation) && result?.practiceSet) return { path: '/practice', state: { openPracticeSet: result.practiceSet } }
+  if (['generateQuiz', 'generateFlashcards', 'generateMockExam', 'generateVisualExplanation'].includes(operation) && result?.practiceSet) return { path: '/practice', state: { openPracticeSet: result.practiceSet } }
   if (['analyzeDocument', 'generateSummary'].includes(operation)) return { path: '/upload', state: { openDocumentResult: { documentId: input.documentId, operation: operation === 'generateSummary' ? 'summary' : 'analysis' } } }
   if (operation === 'analyzeTimetable') return { path: '/study-plan' }
   if (operation === 'extractExamSchedule') return { path: '/practice', state: { openPracticeTab: 'exams' } }
@@ -54,6 +55,7 @@ export const AI_OPERATIONS = Object.freeze({
   EXTRACT_EXAM_SCHEDULE: 'extractExamSchedule', GENERATE_QUIZ: 'generateQuiz',
   GENERATE_FLASHCARDS: 'generateFlashcards', GENERATE_SUMMARY: 'generateSummary',
   GENERATE_MOCK_EXAM: 'generateMockExam', GENERATE_STUDY_PLAN: 'generateStudyPlan',
+  GENERATE_VISUAL_EXPLANATION: 'generateVisualExplanation',
   ANALYZE_PROGRESS: 'analyzeProgress', MARK_MOCK_EXAM: 'markMockExam', PERSONAL_ASSISTANT: 'personalAssistant',
 })
 
@@ -82,6 +84,7 @@ export const generateQuiz = input => requestAI(AI_OPERATIONS.GENERATE_QUIZ, inpu
 export const generateFlashcards = input => requestAI(AI_OPERATIONS.GENERATE_FLASHCARDS, input)
 export const generateSummary = input => requestAI(AI_OPERATIONS.GENERATE_SUMMARY, input)
 export const generateMockExam = input => requestAI(AI_OPERATIONS.GENERATE_MOCK_EXAM, input)
+export const generateVisualExplanation = input => requestAI(AI_OPERATIONS.GENERATE_VISUAL_EXPLANATION, input)
 export const generateStudyPlan = input => requestAI(AI_OPERATIONS.GENERATE_STUDY_PLAN, input)
 export const analyzeProgress = input => requestAI(AI_OPERATIONS.ANALYZE_PROGRESS, input)
 export const markMockExam = input => requestAI(AI_OPERATIONS.MARK_MOCK_EXAM, input)
