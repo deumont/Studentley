@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
-import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Send, Sparkles, Trash2, UserRoundCog } from 'lucide-react'
+import { Bot, BookOpen, CalendarCheck2, CalendarPlus, CheckCircle2, FileText, ListPlus, LockKeyhole, Mic, MicOff, Send, Sparkles, Trash2, UserRoundCog, Volume2, VolumeX } from 'lucide-react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { askPersonalAssistant } from '../services/ai'
@@ -39,11 +39,17 @@ export default function PersonalAI() {
   const [documentId, setDocumentId] = useState('')
   const [question, setQuestion] = useState('')
   const [sending, setSending] = useState(false)
+  const [listening, setListening] = useState(false)
+  const [voiceError, setVoiceError] = useState('')
+  const [speakingIndex, setSpeakingIndex] = useState(null)
   const [messages, setMessages] = useState(() => loadConversation(user?.id))
   const endRef = useRef(null)
+  const recognitionRef = useRef(null)
   const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
+  const voiceInputSupported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+  const voiceOutputSupported = typeof window !== 'undefined' && Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance)
 
   useEffect(() => { document.title = 'Personal AI — Studentley' }, [])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -70,6 +76,57 @@ export default function PersonalAI() {
     if (generated.created?.length) refresh()
     navigate('/personal-ai', { replace: true })
   }, [location.state, navigate, refresh])
+  useEffect(() => () => {
+    recognitionRef.current?.abort()
+    if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
+  }, [])
+
+  const toggleListening = () => {
+    if (listening) {
+      recognitionRef.current?.stop()
+      return
+    }
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
+    if (!SpeechRecognition) {
+      setVoiceError('Voice input is not supported by this browser.')
+      return
+    }
+    const recognition = new SpeechRecognition()
+    const existingText = question.trim()
+    recognitionRef.current = recognition
+    recognition.lang = document.documentElement.lang || navigator.language || 'en-US'
+    recognition.continuous = false
+    recognition.interimResults = true
+    recognition.onstart = () => { setListening(true); setVoiceError('') }
+    recognition.onresult = event => {
+      const transcript = Array.from(event.results).map(result => result[0]?.transcript || '').join(' ').trim()
+      setQuestion([existingText, transcript].filter(Boolean).join(existingText ? ' ' : ''))
+    }
+    recognition.onerror = event => {
+      if (event.error === 'not-allowed' || event.error === 'service-not-allowed') setVoiceError('Microphone access was blocked. Allow it in your browser settings and try again.')
+      else if (event.error === 'no-speech') setVoiceError('I did not hear anything. Try speaking again.')
+      else if (event.error !== 'aborted') setVoiceError('Voice input stopped unexpectedly. Please try again.')
+    }
+    recognition.onend = () => { setListening(false); recognitionRef.current = null }
+    try { recognition.start() } catch { setListening(false); setVoiceError('Voice input could not start. Please try again.') }
+  }
+
+  const speakMessage = (text, index) => {
+    if (!voiceOutputSupported) return
+    if (speakingIndex === index) {
+      window.speechSynthesis.cancel()
+      setSpeakingIndex(null)
+      return
+    }
+    window.speechSynthesis.cancel()
+    const utterance = new window.SpeechSynthesisUtterance(text)
+    utterance.lang = document.documentElement.lang || navigator.language || 'en-US'
+    utterance.rate = 0.95
+    utterance.onend = () => setSpeakingIndex(null)
+    utterance.onerror = () => setSpeakingIndex(null)
+    setSpeakingIndex(index)
+    window.speechSynthesis.speak(utterance)
+  }
 
   const send = async event => {
     event?.preventDefault()
@@ -88,7 +145,15 @@ export default function PersonalAI() {
     } finally { setSending(false) }
   }
 
-  const reset = () => { if (user?.id) localStorage.removeItem(conversationKey(user.id)); setMessages([welcome]); setQuestion('') }
+  const reset = () => {
+    recognitionRef.current?.abort()
+    window.speechSynthesis?.cancel()
+    if (user?.id) localStorage.removeItem(conversationKey(user.id))
+    setMessages([welcome])
+    setQuestion('')
+    setVoiceError('')
+    setSpeakingIndex(null)
+  }
 
   return <>
     <PageHeading eyebrow="Personal AI" title="Your AI, shaped around your life" text="Ask for help or tell it to add study sessions, tasks, exams and subjects directly to your Studentley workspace." />
@@ -108,13 +173,20 @@ export default function PersonalAI() {
         <div className="tutor-messages" aria-live="polite">
           {messages.map((message, index) => <div className={`tutor-message ${message.role} ${message.unavailable ? 'unavailable' : ''}`} key={`${message.role}-${index}`}>
             {message.role === 'assistant' && <span><Bot /></span>}
-            <div><p>{message.text}</p>{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span><CheckCircle2 /></article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again. No workspace item was added.</small>}</div>
+            <div><p>{message.text}</p>{message.role === 'assistant' && voiceOutputSupported && <button type="button" className={`tutor-speak-button ${speakingIndex === index ? 'speaking' : ''}`} onClick={() => speakMessage(message.text, index)} aria-label={speakingIndex === index ? 'Stop reading response' : 'Read response aloud'} title={speakingIndex === index ? 'Stop reading' : 'Read aloud'}>{speakingIndex === index ? <VolumeX /> : <Volume2 />}{speakingIndex === index ? 'Stop' : 'Listen'}</button>}{message.actions?.length > 0 && <div className="personal-ai-actions">{message.actions.map((action, actionIndex) => { const Icon = actionIcons[action.kind] || CheckCircle2; return <article key={`${action.kind}-${action.id || actionIndex}`}><Icon /><span><b>{action.title}</b><small>{action.detail || `Added to ${action.kind.replace('_', ' ')}`}</small></span><CheckCircle2 /></article> })}</div>}{message.sources?.length > 0 && <small className="tutor-sources">Sources: {message.sources.join(' · ')}</small>}{message.unavailable && <small>Please try again. No workspace item was added.</small>}</div>
           </div>)}
           {messages.length === 1 && <div className="tutor-starters">{starters.map(starter => <button key={starter} onClick={() => setQuestion(starter)}><Sparkles />{starter}</button>)}</div>}
           {sending && <div className="tutor-message assistant typing"><span><Bot /></span><div><i /><i /><i /></div></div>}
           <div ref={endRef} />
         </div>
-        <form className="tutor-composer" onSubmit={send}><textarea rows="2" value={question} onChange={event => setQuestion(event.target.value)} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send() } }} placeholder="Ask for help or tell your AI what to add…" /><Button loading={sending} disabled={!question.trim()} aria-label="Send request"><Send /></Button></form>
+        <form className="tutor-composer" onSubmit={send}>
+          <div className="tutor-composer-field">
+            <textarea rows="2" value={question} onChange={event => { setQuestion(event.target.value); setVoiceError('') }} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send() } }} placeholder={listening ? 'Listening…' : 'Ask for help or tell your AI what to add…'} />
+            {(listening || voiceError) && <small className={`voice-status ${voiceError ? 'error' : ''}`} role="status">{voiceError || 'Listening… speak now. Tap the microphone again when you are finished.'}</small>}
+          </div>
+          <button type="button" className={`voice-input-button ${listening ? 'listening' : ''}`} onClick={toggleListening} disabled={sending || !voiceInputSupported} aria-label={listening ? 'Stop listening' : 'Speak to your personal AI'} title={voiceInputSupported ? (listening ? 'Stop listening' : 'Speak to your AI') : 'Voice input is not supported by this browser'}>{listening ? <MicOff /> : <Mic />}</button>
+          <Button loading={sending} disabled={!question.trim()} aria-label="Send request"><Send /></Button>
+        </form>
         <footer>Conversation saved in this browser. Your AI can make mistakes, so check important details and dates.</footer>
       </section>
     </div>
