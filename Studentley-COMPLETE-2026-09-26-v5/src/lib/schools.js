@@ -4,3 +4,5 @@ export const SCHOOL_OPTIONS = [
   { value: 'Prefer not to say', label: 'Prefer not to say' },
 ]
 
+export const isIsrEmail = value => /^\d{5}@isr-school[.]de$/i.test(String(value || '').trim())
+

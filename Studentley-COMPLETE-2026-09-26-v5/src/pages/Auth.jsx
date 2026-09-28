@@ -3,7 +3,7 @@ import { ArrowLeft, BookOpen, CalendarCheck, CheckCircle2, Eye, EyeOff, FileText
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { appUrl, supabase } from '../lib/supabase'
-import { SCHOOL_OPTIONS } from '../lib/schools'
+import { isIsrEmail, SCHOOL_OPTIONS } from '../lib/schools'
 import { Button, ErrorState, Field } from '../components/UI'
 
 const benefits = [
@@ -69,7 +69,7 @@ export default function Auth() {
         {error && <ErrorState text={error} />}
         {mode === 'reset' && !authLoading && !session && <ErrorState text="This password reset link is invalid or has expired. Request a new reset link." />}
         <form onSubmit={submit}>
-          {mode === 'signup' && <><Field label="Your name"><input required autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="What should we call you?" /></Field><Field label="Date of birth" hint="Used privately for age-appropriate account handling."><input required type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} /></Field><Field label="School" hint="ISR students receive Plus School free."><select required value={form.school} onChange={e => setForm({ ...form, school: e.target.value })}><option value="">Choose your school</option>{SCHOOL_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></Field></>}
+          {mode === 'signup' && <><Field label="Your name"><input required autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="What should we call you?" /></Field><Field label="Date of birth" hint="Used privately for age-appropriate account handling."><input required type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} /></Field><Field label="School" hint={form.school === 'ISR' ? isIsrEmail(form.email) ? 'ISR email recognized. Plus School activates after email verification.' : 'Plus School requires your five-digit ISR email, for example 13964@isr-school.de.' : 'Choose the school you attend.'}><select required value={form.school} onChange={e => setForm({ ...form, school: e.target.value })}><option value="">Choose your school</option>{SCHOOL_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></Field></>}
           {mode !== 'reset' && <Field label="Email"><input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" /></Field>}
           {mode !== 'forgot' && <Field label={mode === 'reset' ? 'New password' : 'Password'}><div className="password-input"><input required type={show ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" /><button type="button" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff /> : <Eye />}</button></div></Field>}
           {(mode === 'signup' || mode === 'reset') && <Field label="Confirm password"><input required type="password" autoComplete="new-password" value={form.confirm} onChange={e => setForm({ ...form, confirm: e.target.value })} /></Field>}
