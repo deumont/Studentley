@@ -22,7 +22,8 @@ export function ProfileAvatar({ user, name = 'Student', className = '', path: ex
   useEffect(() => {
     let current = true
     setUrl('')
-    if (path) profilePictureUrl(path, bucket).then(value => current && setUrl(value)).catch(() => {})
+    if (path?.startsWith('/') || /^https?:\/\//i.test(path)) setUrl(path)
+    else if (path) profilePictureUrl(path, bucket).then(value => current && setUrl(value)).catch(() => {})
     return () => { current = false }
   }, [path, bucket])
   const initials = name.split(' ').filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'S'

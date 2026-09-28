@@ -1,4 +1,5 @@
 import { supabase } from '../lib/supabase'
+import { withCommunityRivalsLeaderboard } from '../lib/communityProfiles'
 
 async function rivalsRequest(action, input = {}) {
   const { data } = await supabase.auth.getSession()
@@ -14,7 +15,10 @@ async function rivalsRequest(action, input = {}) {
   return result
 }
 
-export const loadRivalsDashboard = () => rivalsRequest('dashboard')
+export const loadRivalsDashboard = async () => {
+  const result = await rivalsRequest('dashboard')
+  return { ...result, leaderboard: withCommunityRivalsLeaderboard(result.leaderboard || []) }
+}
 export const loadRivalTopics = () => rivalsRequest('topics')
 export const queueRankedBattle = input => rivalsRequest('queue_ranked', input)
 export const addPracticeRival = matchId => rivalsRequest('add_practice_rival', { matchId })
