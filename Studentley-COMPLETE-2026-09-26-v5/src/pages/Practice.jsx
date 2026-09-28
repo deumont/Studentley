@@ -17,7 +17,9 @@ export default function Practice() {
     const requestedId = location.state?.openPracticeSetId
     const incoming = location.state?.openPracticeSet || (requestedId ? practiceSets.find(item => item.id === requestedId) : null)
     if (!incoming) {
-      if (location.state?.openPracticeTab) { setTab(location.state.openPracticeTab); navigate('/practice', { replace: true }) }
+      if (location.state?.openPracticeTab) setTab(location.state.openPracticeTab)
+      if (location.state?.openPracticeGenerator) setModal(location.state.openPracticeGenerator)
+      if (location.state?.openPracticeTab || location.state?.openPracticeGenerator) navigate('/practice', { replace: true })
       return
     }
     setSelected(incoming)
