@@ -19,6 +19,22 @@ const welcome = {
 }
 
 const actionIcons = { study_session: CalendarPlus, task: ListPlus, exam: CalendarCheck2, subject: BookOpen }
+const mobileDevice = () => {
+  if (typeof navigator === 'undefined') return false
+  if (navigator.userAgentData?.mobile) return true
+  return /Android|iPhone|iPad|iPod|Mobile|Silk/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints > 1)
+}
+
+const cleanSpeechText = text => String(text || '')
+  .replace(/https?:\/\/\S+/g, 'link')
+  .replace(/[`*_#>|]/g, '')
+  .replace(/\s+/g, ' ')
+  .trim()
+
+const speechChunks = text => {
+  const sentences = cleanSpeechText(text).match(/[^.!?]+[.!?]+|[^.!?]+$/g) || []
+  return sentences.flatMap(sentence => sentence.length <= 220 ? [sentence.trim()] : sentence.match(/.{1,200}(?:\s|$)/g)?.map(part => part.trim()).filter(Boolean) || [sentence.trim()])
+}
 
 const conversationKey = userId => `studentley-personal-ai-conversation-${userId}`
 const loadConversation = userId => {
@@ -45,11 +61,18 @@ export default function PersonalAI() {
   const [messages, setMessages] = useState(() => loadConversation(user?.id))
   const endRef = useRef(null)
   const recognitionRef = useRef(null)
+  const keepListeningRef = useRef(false)
+  const recognitionRestartRef = useRef(null)
+  const dictationBaseRef = useRef('')
+  const finalTranscriptRef = useRef('')
+  const voicesRef = useRef([])
+  const speechSessionRef = useRef(0)
   const conversationUser = useRef(user?.id)
   const currentPlan = profile?.subscription_plan || 'free'
   const selectedDocument = useMemo(() => documents.find(item => item.id === documentId), [documents, documentId])
-  const voiceInputSupported = typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
-  const voiceOutputSupported = typeof window !== 'undefined' && Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance)
+  const mobileVoiceEnabled = mobileDevice()
+  const voiceInputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.SpeechRecognition || window.webkitSpeechRecognition)
+  const voiceOutputSupported = mobileVoiceEnabled && typeof window !== 'undefined' && Boolean(window.speechSynthesis && window.SpeechSynthesisUtterance)
 
   useEffect(() => { document.title = 'Personal AI — Studentley' }, [])
   useEffect(() => { endRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
@@ -76,60 +99,136 @@ export default function PersonalAI() {
     if (generated.created?.length) refresh()
     navigate('/personal-ai', { replace: true })
   }, [location.state, navigate, refresh])
+  useEffect(() => {
+    if (!voiceOutputSupported) return undefined
+    const refreshVoices = () => { voicesRef.current = window.speechSynthesis.getVoices() }
+    refreshVoices()
+    window.speechSynthesis.addEventListener?.('voiceschanged', refreshVoices)
+    return () => window.speechSynthesis.removeEventListener?.('voiceschanged', refreshVoices)
+  }, [voiceOutputSupported])
   useEffect(() => () => {
+    keepListeningRef.current = false
+    clearTimeout(recognitionRestartRef.current)
     recognitionRef.current?.abort()
+    speechSessionRef.current += 1
     if (typeof window !== 'undefined') window.speechSynthesis?.cancel()
   }, [])
 
-  const toggleListening = () => {
-    if (listening) {
-      recognitionRef.current?.stop()
-      return
+  const stopListening = (abort = false) => {
+    keepListeningRef.current = false
+    clearTimeout(recognitionRestartRef.current)
+    const recognition = recognitionRef.current
+    recognitionRef.current = null
+    if (recognition) {
+      try { abort ? recognition.abort() : recognition.stop() } catch { /* Recognition may have already ended. */ }
     }
+    setListening(false)
+  }
+
+  const startRecognitionSession = () => {
+    if (!keepListeningRef.current || recognitionRef.current) return
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) {
+      keepListeningRef.current = false
+      setListening(false)
       setVoiceError('Voice input is not supported by this browser.')
       return
     }
     const recognition = new SpeechRecognition()
-    const existingText = question.trim()
     recognitionRef.current = recognition
-    recognition.lang = document.documentElement.lang || navigator.language || 'en-US'
-    recognition.continuous = false
+    recognition.lang = /^en-/i.test(navigator.language || '') ? navigator.language : 'en-US'
+    recognition.continuous = true
     recognition.interimResults = true
+    recognition.maxAlternatives = 3
     recognition.onstart = () => { setListening(true); setVoiceError('') }
     recognition.onresult = event => {
-      const transcript = Array.from(event.results).map(result => result[0]?.transcript || '').join(' ').trim()
-      setQuestion([existingText, transcript].filter(Boolean).join(existingText ? ' ' : ''))
+      let interimTranscript = ''
+      for (let index = event.resultIndex; index < event.results.length; index += 1) {
+        const result = event.results[index]
+        const best = Array.from(result).sort((left, right) => (right.confidence || 0) - (left.confidence || 0))[0]
+        const words = best?.transcript?.trim()
+        if (!words) continue
+        if (result.isFinal) finalTranscriptRef.current = `${finalTranscriptRef.current} ${words}`.trim()
+        else interimTranscript = `${interimTranscript} ${words}`.trim()
+      }
+      setQuestion([dictationBaseRef.current, finalTranscriptRef.current, interimTranscript].filter(Boolean).join(' ').replace(/\s+/g, ' '))
     }
     recognition.onerror = event => {
+      if (event.error === 'no-speech' || event.error === 'aborted') return
+      keepListeningRef.current = false
       if (event.error === 'not-allowed' || event.error === 'service-not-allowed') setVoiceError('Microphone access was blocked. Allow it in your browser settings and try again.')
-      else if (event.error === 'no-speech') setVoiceError('I did not hear anything. Try speaking again.')
-      else if (event.error !== 'aborted') setVoiceError('Voice input stopped unexpectedly. Please try again.')
+      else if (event.error === 'audio-capture') setVoiceError('No microphone was found. Check your phone’s microphone settings.')
+      else setVoiceError('Voice input lost its connection. Tap the microphone to try again.')
     }
-    recognition.onend = () => { setListening(false); recognitionRef.current = null }
-    try { recognition.start() } catch { setListening(false); setVoiceError('Voice input could not start. Please try again.') }
+    recognition.onend = () => {
+      recognitionRef.current = null
+      if (keepListeningRef.current) recognitionRestartRef.current = setTimeout(startRecognitionSession, 250)
+      else setListening(false)
+    }
+    try { recognition.start() } catch {
+      recognitionRef.current = null
+      keepListeningRef.current = false
+      setListening(false)
+      setVoiceError('Voice input could not start. Please try again.')
+    }
+  }
+
+  const toggleListening = () => {
+    if (keepListeningRef.current || listening) return stopListening()
+    dictationBaseRef.current = question.trim()
+    finalTranscriptRef.current = ''
+    keepListeningRef.current = true
+    setListening(true)
+    setVoiceError('')
+    startRecognitionSession()
   }
 
   const speakMessage = (text, index) => {
     if (!voiceOutputSupported) return
     if (speakingIndex === index) {
+      speechSessionRef.current += 1
       window.speechSynthesis.cancel()
       setSpeakingIndex(null)
       return
     }
     window.speechSynthesis.cancel()
-    const utterance = new window.SpeechSynthesisUtterance(text)
-    utterance.lang = document.documentElement.lang || navigator.language || 'en-US'
-    utterance.rate = 0.95
-    utterance.onend = () => setSpeakingIndex(null)
-    utterance.onerror = () => setSpeakingIndex(null)
+    const session = speechSessionRef.current + 1
+    speechSessionRef.current = session
+    const chunks = speechChunks(text)
+    const availableVoices = voicesRef.current.length ? voicesRef.current : window.speechSynthesis.getVoices()
+    const preferredVoice = [...availableVoices].sort((left, right) => {
+      const score = voice => {
+        const name = voice.name.toLowerCase()
+        let value = /^en-(gb|us|au|ie)/i.test(voice.lang) ? 50 : /^en/i.test(voice.lang) ? 30 : -100
+        if (/natural|neural|enhanced|premium|siri|samantha|ava|aria|jenny|serena|daniel|karen|google uk english|google us english/.test(name)) value += 40
+        if (/compact|espeak|fred/.test(name)) value -= 60
+        if (voice.localService) value += 5
+        if (voice.default) value += 2
+        return value
+      }
+      return score(right) - score(left)
+    })[0]
+    const speakChunk = chunkIndex => {
+      if (speechSessionRef.current !== session || chunkIndex >= chunks.length) {
+        if (speechSessionRef.current === session) setSpeakingIndex(null)
+        return
+      }
+      const utterance = new window.SpeechSynthesisUtterance(chunks[chunkIndex])
+      if (preferredVoice) utterance.voice = preferredVoice
+      utterance.lang = preferredVoice?.lang || 'en-US'
+      utterance.rate = 0.9
+      utterance.pitch = 1
+      utterance.onend = () => speakChunk(chunkIndex + 1)
+      utterance.onerror = () => setSpeakingIndex(null)
+      window.speechSynthesis.speak(utterance)
+    }
     setSpeakingIndex(index)
-    window.speechSynthesis.speak(utterance)
+    speakChunk(0)
   }
 
   const send = async event => {
     event?.preventDefault()
+    if (keepListeningRef.current) stopListening()
     const text = question.trim()
     if (!text || sending) return
     const history = messages.filter(message => !message.welcome).slice(-10).map(({ role, text: messageText }) => ({ role, text: messageText }))
@@ -146,7 +245,8 @@ export default function PersonalAI() {
   }
 
   const reset = () => {
-    recognitionRef.current?.abort()
+    stopListening(true)
+    speechSessionRef.current += 1
     window.speechSynthesis?.cancel()
     if (user?.id) localStorage.removeItem(conversationKey(user.id))
     setMessages([welcome])
@@ -184,7 +284,7 @@ export default function PersonalAI() {
             <textarea rows="2" value={question} onChange={event => { setQuestion(event.target.value); setVoiceError('') }} onKeyDown={event => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); send() } }} placeholder={listening ? 'Listening…' : 'Ask for help or tell your AI what to add…'} />
             {(listening || voiceError) && <small className={`voice-status ${voiceError ? 'error' : ''}`} role="status">{voiceError || 'Listening… speak now. Tap the microphone again when you are finished.'}</small>}
           </div>
-          <button type="button" className={`voice-input-button ${listening ? 'listening' : ''}`} onClick={toggleListening} disabled={sending || !voiceInputSupported} aria-label={listening ? 'Stop listening' : 'Speak to your personal AI'} title={voiceInputSupported ? (listening ? 'Stop listening' : 'Speak to your AI') : 'Voice input is not supported by this browser'}>{listening ? <MicOff /> : <Mic />}</button>
+          {mobileVoiceEnabled && <button type="button" className={`voice-input-button ${listening ? 'listening' : ''}`} onClick={toggleListening} disabled={sending || !voiceInputSupported} aria-label={listening ? 'Stop listening' : 'Speak to your personal AI'} title={voiceInputSupported ? (listening ? 'Stop listening' : 'Speak to your AI') : 'Voice input is not supported by this browser'}>{listening ? <MicOff /> : <Mic />}</button>}
           <Button loading={sending} disabled={!question.trim()} aria-label="Send request"><Send /></Button>
         </form>
         <footer>Conversation saved in this browser. Your AI can make mistakes, so check important details and dates.</footer>
