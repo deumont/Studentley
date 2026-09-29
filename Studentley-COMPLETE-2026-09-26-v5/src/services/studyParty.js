@@ -10,7 +10,7 @@ async function studyPartyRequest(action, input = {}) {
     body: JSON.stringify({ action, input }),
   })
   const result = await response.json().catch(() => ({}))
-  if (!response.ok) throw new Error(result.error || 'The Study Party is temporarily unavailable.')
+  if (!response.ok) throw new Error(result.error || 'The Quizz Show is temporarily unavailable.')
   return result
 }
 
@@ -18,5 +18,6 @@ export const createStudyParty = input => studyPartyRequest('create', input)
 export const joinStudyParty = code => studyPartyRequest('join', { code })
 export const loadStudyParty = partyId => studyPartyRequest('get', { partyId })
 export const startStudyParty = partyId => studyPartyRequest('start', { partyId })
+export const openStudyPartyQuestion = partyId => studyPartyRequest('open_question', { partyId })
 export const buzzStudyParty = partyId => studyPartyRequest('buzz', { partyId })
 export const answerStudyParty = (partyId, answer) => studyPartyRequest('answer', { partyId, answer })

@@ -9,7 +9,7 @@ const links = [
   ['/rivals', Gauge, 'Overview', true],
   ['/rivals/ranked', Trophy, 'Ranked', false],
   ['/rivals/friends', Users, 'Friend Battles', false],
-  ['/rivals/party', PartyPopper, 'Study Party', false],
+  ['/rivals/party', PartyPopper, 'Quizz Show', false],
   ['/rivals/quizzes', Library, 'Quiz Library', false],
 ]
 
