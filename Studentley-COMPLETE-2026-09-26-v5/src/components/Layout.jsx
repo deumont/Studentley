@@ -19,6 +19,7 @@ export default function Layout() {
   const [mobile, setMobile] = useState(false), [account, setAccount] = useState(false), [notifications, setNotifications] = useState(false)
   const navigate = useNavigate(), menuRef = useRef()
   const name = profile?.display_name || 'Student'
+  const isIsrPlus = profile?.school_plan && profile?.subscription_plan === 'plus'
   const copy = shellCopy
   const unread = data?.notifications?.filter(item => !item.read_at) || []
   useEffect(() => { const click = event => !menuRef.current?.contains(event.target) && setAccount(false); document.addEventListener('mousedown', click); return () => document.removeEventListener('mousedown', click) }, [])
@@ -29,7 +30,7 @@ export default function Layout() {
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
       <div className="sidebar-top"><NavLink to="/app" className="brand dashboard-brand" onClick={() => setMobile(false)}><BrandWordmark /></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
       <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{copy[label]}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label={copy.proRequired} />}</NavLink>)}</nav>
-      <div className="sidebar-quote"><Sparkles /><p>{copy.quote}</p></div>
+      <div className="sidebar-quote"><Sparkles /><p>{isIsrPlus ? 'ISR PLUS PLAN' : copy.quote}</p></div>
     </aside>
     <main className="main-area">
       <header className="topbar"><button className="mobile-menu" onClick={() => setMobile(true)} aria-label="Open navigation"><Menu /></button><div className="topbar-space" />
