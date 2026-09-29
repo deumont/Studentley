@@ -32,6 +32,7 @@ export const createFriendRoom = input => rivalsRequest('create_friend_room', inp
 export const joinFriendRoom = code => rivalsRequest('join_friend_room', { code })
 export const startFriendRoom = matchId => rivalsRequest('start_friend_room', { matchId })
 export const submitRivalMatch = (matchId, answers) => rivalsRequest('submit_match', { matchId, answers })
+export const forfeitRivalMatch = matchId => rivalsRequest('forfeit_match', { matchId })
 export const loadPublicRivalQuizzes = () => rivalsRequest('list_public_quizzes')
 export const createPublicRivalQuiz = input => rivalsRequest('create_public_quiz', input)
 export const submitPublicRivalQuiz = (quizId, answers, elapsedMs) => rivalsRequest('submit_public_quiz', { quizId, answers, elapsedMs })

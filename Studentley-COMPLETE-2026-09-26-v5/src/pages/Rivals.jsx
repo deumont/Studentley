@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowRight, Award, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Copy, Crown, Flame, Gauge, Library, LoaderCircle, LockKeyhole, Medal, Plus, RefreshCw, Search, Shield, Sparkles, Swords, Target, Trash2, Trophy, UploadCloud, UserPlus, Users, X, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Award, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Copy, Crown, Flame, Gauge, Library, LoaderCircle, LockKeyhole, Medal, Plus, RefreshCw, Search, Shield, Sparkles, Swords, Target, Trash2, Trophy, UploadCloud, UserPlus, Users, X, Zap } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Button, EmptyState, ErrorState, Field, Loader, ProfileAvatar } from '../components/UI'
+import { Button, EmptyState, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../components/UI'
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { generateQuiz } from '../services/ai'
-import { addPracticeRival, cancelRivalMatch, createFriendRoom, createPublicRivalQuiz, joinFriendRoom, loadPublicRivalQuizzes, loadRivalMatch, loadRivalTopics, loadRivalsDashboard, queueRankedBattle, startFriendRoom, submitPublicRivalQuiz, submitRivalMatch } from '../services/rivals'
+import { addPracticeRival, cancelRivalMatch, createFriendRoom, createPublicRivalQuiz, forfeitRivalMatch, joinFriendRoom, loadPublicRivalQuizzes, loadRivalMatch, loadRivalTopics, loadRivalsDashboard, queueRankedBattle, startFriendRoom, submitPublicRivalQuiz, submitRivalMatch } from '../services/rivals'
 
 const tiers = [
   ['Bronze', 0, '#b87945'], ['Silver', 1000, '#8d9bae'], ['Gold', 1200, '#e0a91f'],
@@ -189,8 +189,8 @@ function FriendLobby({ match, onStart, loading, error }) {
 }
 
 function RivalArena({ match, onUpdate }) {
-  const navigate = useNavigate()
   const [index, setIndex] = useState(0), [answers, setAnswers] = useState({}), [submitting, setSubmitting] = useState(false), [now, setNow] = useState(Date.now()), submitted = useRef(false)
+  const [forfeitOpen, setForfeitOpen] = useState(false), [forfeiting, setForfeiting] = useState(false), [forfeitError, setForfeitError] = useState('')
   const current = match.quiz[index]
   const finishRemaining = match.finish_deadline ? Math.max(0, new Date(match.finish_deadline).getTime() - now) : null
   const finishSeconds = finishRemaining === null ? null : Math.ceil(finishRemaining / 1000)
@@ -198,9 +198,24 @@ function RivalArena({ match, onUpdate }) {
   const elapsed = Math.max(0, now - new Date(match.started_at).getTime())
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(timer) }, [])
   const submit = useCallback(async () => { if (submitted.current) return; submitted.current = true; setSubmitting(true); try { onUpdate((await submitRivalMatch(match.id, answers)).match) } catch { submitted.current = false } finally { setSubmitting(false) } }, [match.id, answers, onUpdate])
+  const forfeit = async () => {
+    if (submitted.current) return
+    submitted.current = true
+    setForfeiting(true)
+    setForfeitError('')
+    try {
+      const result = await forfeitRivalMatch(match.id)
+      setForfeitOpen(false)
+      onUpdate(result.match)
+    } catch (problem) {
+      submitted.current = false
+      setForfeitError(problem.message)
+    } finally { setForfeiting(false) }
+  }
   useEffect(() => { if (finishRemaining === 0 && !submitted.current) submit() }, [finishRemaining, submit])
-  return <section className={`card rival-arena ${finishRemaining !== null ? 'final-sprint' : ''} ${finishCritical ? 'critical' : ''}`}>
-    <header><button onClick={async () => { if (submitted.current || !window.confirm('Forfeit this battle? Unanswered submission will be recorded.')) return; submitted.current = true; try { await submitRivalMatch(match.id, {}); navigate('/rivals') } catch { submitted.current = false } }}><X /> Forfeit / exit</button><div><span>{match.mode === 'ranked' ? 'Ranked Battle' : 'Friend Battle'}</span><b>{match.players.map(player => player.display_name).join(' vs ')}</b></div><div className={finishRemaining !== null ? 'sudden' : ''}><Clock3 /><span><small>{finishRemaining !== null ? 'Final sprint' : 'Time'}</small><b>{finishRemaining !== null ? `${finishSeconds}s` : formatTime(elapsed)}</b></span></div></header>
+  return <>
+  <section className={`card rival-arena ${finishRemaining !== null ? 'final-sprint' : ''} ${finishCritical ? 'critical' : ''}`}>
+    <header><button onClick={() => { if (!submitted.current) { setForfeitError(''); setForfeitOpen(true) } }}><X /> Forfeit / exit</button><div><span>{match.mode === 'ranked' ? 'Ranked Battle' : 'Friend Battle'}</span><b>{match.players.map(player => player.display_name).join(' vs ')}</b></div><div className={finishRemaining !== null ? 'sudden' : ''}><Clock3 /><span><small>{finishRemaining !== null ? 'Final sprint' : 'Time'}</small><b>{finishRemaining !== null ? `${finishSeconds}s` : formatTime(elapsed)}</b></span></div></header>
     <div className="rival-question-progress"><span style={{ width: `${(index + 1) / match.quiz.length * 100}%` }} /></div>
     <main>
       {finishRemaining !== null && <div className={`rivals-finish-countdown ${finishCritical ? 'critical' : ''}`} role="timer" aria-live={finishCritical ? 'assertive' : 'off'}><div><span>Opponent finished</span><strong key={finishSeconds}>{finishSeconds}</strong><p>seconds left · every correct answer selected before zero still counts</p></div><i aria-hidden="true"><span style={{ width: `${Math.max(0, Math.min(100, finishRemaining / 20000 * 100))}%` }} /></i></div>}
@@ -208,10 +223,13 @@ function RivalArena({ match, onUpdate }) {
     </main>
     <footer><Button variant="ghost" disabled={!index} onClick={() => setIndex(value => value - 1)}><ChevronLeft /> Previous</Button><div className="arena-answer-count"><Check /> {Object.keys(answers).length}/{match.quiz.length} answered</div><Button className="rivals-primary" loading={submitting} disabled={answers[index] === undefined} onClick={() => index === match.quiz.length - 1 ? submit() : setIndex(value => value + 1)}>{index === match.quiz.length - 1 ? 'Lock answers' : 'Next'} <ChevronRight /></Button></footer>
   </section>
+  {forfeitOpen && <Modal title="Forfeit this match?" description="This action cannot be undone." onClose={() => !forfeiting && setForfeitOpen(false)}><div className="forfeit-warning"><span><AlertTriangle /></span><div><b>Are you sure you want to quit?</b><p>You will lose 15 Studentley Points. Your opponent will immediately win and receive {match.mode === 'ranked' ? '100' : '35'} Studentley Points.</p></div></div>{forfeitError && <ErrorState text={forfeitError} />}<div className="forfeit-actions"><Button variant="ghost" disabled={forfeiting} onClick={() => setForfeitOpen(false)}>Keep playing</Button><Button className="forfeit-confirm-button" loading={forfeiting} onClick={forfeit}><X /> Forfeit and lose 15 SP</Button></div></Modal>}
+  </>
 }
 
 function BattleResult({ match, onExit }) {
-  const sorted = [...match.players].sort((a, b) => (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms || Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms || Number.MAX_SAFE_INTEGER)))
-  const me = match.players.find(player => player.is_current_user), won = match.winner_key === me?.player_key
-  return <section className={`battle-result ${won ? 'victory' : ''}`}><div className="result-burst"><span><Trophy /></span></div><span className="rivals-kicker">{match.winner_key ? (won ? 'Victory' : 'Battle complete') : 'Draw'}</span><h1>{won ? 'You won the battle!' : match.winner_key ? `${sorted[0]?.display_name} takes the win` : 'Too close to separate'}</h1><p>{match.mode === 'ranked' && won ? '+100 Studentley Points have been added to your balance.' : match.mode === 'friend' && won ? '+35 Studentley Points have been added to your balance.' : 'Correct answers decide first. Speed only breaks a tie.'}</p><div className="result-scoreboard">{sorted.map((player, index) => <article className={`${player.is_current_user ? 'current' : ''} ${match.winner_key === player.player_key ? 'winner' : ''}`} key={player.player_key}><span className="result-position">{index === 0 ? <Crown /> : index + 1}</span><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} /><div><b>{player.display_name}{player.is_current_user && ' (You)'}<PracticeLabel player={player} /></b><small>{player.rating_after !== null && player.rating_before !== player.rating_after ? `${player.rating_after > player.rating_before ? '+' : ''}${player.rating_after - player.rating_before} rating` : match.mode === 'ranked' ? 'Rating unchanged' : 'Friend battle'}</small></div><strong>{player.correct_answers || 0}/{match.question_count}<small>{player.elapsed_ms === null ? 'Did not finish' : formatTime(player.elapsed_ms)}</small></strong></article>)}</div><div className="battle-result-actions"><Button className="rivals-primary" onClick={onExit}>Rivals dashboard</Button><Link className="button rivals-secondary" to={match.mode === 'ranked' ? '/rivals/ranked' : '/rivals/friends'}>Play again</Link></div></section>
+  const sorted = [...match.players].sort((a, b) => (Number(Boolean(a.forfeited)) - Number(Boolean(b.forfeited))) || (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms || Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms || Number.MAX_SAFE_INTEGER)))
+  const me = match.players.find(player => player.is_current_user), won = match.winner_key === me?.player_key, forfeiter = match.players.find(player => player.forfeited)
+  const resultText = me?.forfeited ? 'You forfeited the match and lost 15 Studentley Points.' : forfeiter && won ? `${forfeiter.display_name} forfeited. +${match.mode === 'ranked' ? '100' : '35'} Studentley Points have been added to your balance.` : match.mode === 'ranked' && won ? '+100 Studentley Points have been added to your balance.' : match.mode === 'friend' && won ? '+35 Studentley Points have been added to your balance.' : 'Correct answers decide first. Speed only breaks a tie.'
+  return <section className={`battle-result ${won ? 'victory' : ''}`}><div className="result-burst"><span><Trophy /></span></div><span className="rivals-kicker">{match.winner_key ? (won ? 'Victory' : 'Battle complete') : 'Draw'}</span><h1>{won ? 'You won the battle!' : match.winner_key ? `${sorted[0]?.display_name} takes the win` : 'Too close to separate'}</h1><p>{resultText}</p><div className="result-scoreboard">{sorted.map((player, index) => <article className={`${player.is_current_user ? 'current' : ''} ${match.winner_key === player.player_key ? 'winner' : ''}`} key={player.player_key}><span className="result-position">{index === 0 ? <Crown /> : index + 1}</span><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} /><div><b>{player.display_name}{player.is_current_user && ' (You)'}<PracticeLabel player={player} /></b><small>{player.forfeited ? 'Forfeited · −15 SP' : player.rating_after !== null && player.rating_before !== player.rating_after ? `${player.rating_after > player.rating_before ? '+' : ''}${player.rating_after - player.rating_before} rating` : match.mode === 'ranked' ? 'Rating unchanged' : 'Friend battle'}</small></div><strong>{player.correct_answers || 0}/{match.question_count}<small>{player.forfeited ? 'Left match' : player.elapsed_ms === null ? 'Did not finish' : formatTime(player.elapsed_ms)}</small></strong></article>)}</div><div className="battle-result-actions"><Button className="rivals-primary" onClick={onExit}>Rivals dashboard</Button><Link className="button rivals-secondary" to={match.mode === 'ranked' ? '/rivals/ranked' : '/rivals/friends'}>Play again</Link></div></section>
 }

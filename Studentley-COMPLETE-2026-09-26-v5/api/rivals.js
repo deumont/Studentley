@@ -55,6 +55,7 @@ function publicPlayer(player, profile, currentUserId) {
     rating_after: player.rating_after,
     is_current_user: player.user_id === currentUserId,
     is_practice_rival: false,
+    forfeited: player.answers?.__forfeited === true,
   }
 }
 
@@ -74,6 +75,7 @@ function publicPracticeRival(bot) {
     rating_after: bot.rating_before,
     is_current_user: false,
     is_practice_rival: true,
+    forfeited: false,
   }
 }
 
@@ -134,7 +136,17 @@ async function awardPoints(db, userId, match, points) {
   if (updateError) throw updateError
 }
 
-async function finalizeMatch(db, match) {
+async function deductForfeitPoints(db, userId) {
+  const { data: stats, error } = await db.from('student_stats').select('study_points').eq('user_id', userId).maybeSingle()
+  if (error) throw error
+  const current = Number(stats?.study_points || 0)
+  const deducted = Math.min(15, current)
+  const { error: updateError } = await db.from('student_stats').upsert({ user_id: userId, study_points: Math.max(0, current - 15), updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+  if (updateError) throw updateError
+  return deducted
+}
+
+async function finalizeMatch(db, match, forcedWinnerKey = null) {
   if (!['active', 'finishing'].includes(match.status)) return match
   const players = await getPlayers(db, match.id)
   const bots = await getPracticeRivals(db, match.id)
@@ -144,11 +156,12 @@ async function finalizeMatch(db, match) {
   ]
   const submitted = contestants.filter(player => player.submitted_at)
   const expired = match.finish_deadline && new Date(match.finish_deadline) <= new Date()
-  if (!submitted.length || (!expired && submitted.length < contestants.length)) return match
+  if (!forcedWinnerKey && (!submitted.length || (!expired && submitted.length < contestants.length))) return match
 
-  const standings = [...contestants].sort((a, b) => (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms ?? Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms ?? Number.MAX_SAFE_INTEGER)))
-  const best = standings[0]
-  const tied = standings[1] && Number(standings[1].correct_answers || 0) === Number(best.correct_answers || 0) && Number(standings[1].elapsed_ms || 0) === Number(best.elapsed_ms || 0)
+  const forfeited = contestant => !contestant.is_bot && contestant.answers?.__forfeited === true
+  const standings = [...contestants].sort((a, b) => (Number(forfeited(a)) - Number(forfeited(b))) || (Number(b.correct_answers || 0) - Number(a.correct_answers || 0)) || (Number(a.elapsed_ms ?? Number.MAX_SAFE_INTEGER) - Number(b.elapsed_ms ?? Number.MAX_SAFE_INTEGER)))
+  const best = forcedWinnerKey ? contestants.find(player => player.player_key === forcedWinnerKey) : standings[0]
+  const tied = !forcedWinnerKey && standings[1] && !forfeited(best) && !forfeited(standings[1]) && Number(standings[1].correct_answers || 0) === Number(best.correct_answers || 0) && Number(standings[1].elapsed_ms || 0) === Number(best.elapsed_ms || 0)
   const winnerId = tied || best?.is_bot ? null : best?.user_id || null
   const winnerBotId = tied || !best?.is_bot ? null : best?.id || null
   const completedAt = new Date().toISOString()
@@ -464,6 +477,40 @@ async function submitMatch(db, userId, input) {
   return { match: await serializeMatch(db, match, userId), correct_answers: correct, total_questions: items.length }
 }
 
+async function forfeitMatch(db, userId, input) {
+  let match = await getMatchRecord(db, input.matchId)
+  if (!['active', 'finishing'].includes(match.status)) throw Object.assign(new Error('This battle can no longer be forfeited.'), { status: 409 })
+  const players = await getPlayers(db, match.id)
+  const player = players.find(item => item.user_id === userId)
+  if (!player) throw Object.assign(new Error('You are not part of this battle.'), { status: 403 })
+  if (player.submitted_at) return { match: await serializeMatch(db, match, userId), points_lost: 0 }
+
+  const submittedAt = new Date()
+  const elapsed = Math.max(0, Math.min(24 * 60 * 60 * 1000, submittedAt - new Date(match.started_at || match.created_at)))
+  const { data: forfeited, error: forfeitError } = await db.from('rival_match_players').update({
+    answers: { __forfeited: true },
+    correct_answers: 0,
+    elapsed_ms: elapsed,
+    submitted_at: submittedAt.toISOString(),
+  }).eq('match_id', match.id).eq('user_id', userId).is('submitted_at', null).select().maybeSingle()
+  if (forfeitError) throw forfeitError
+  if (!forfeited) return { match: await serializeMatch(db, await getMatchRecord(db, match.id), userId), points_lost: 0 }
+
+  const pointsLost = await deductForfeitPoints(db, userId)
+  const bots = await getPracticeRivals(db, match.id)
+  const opponents = [
+    ...players.filter(item => item.user_id !== userId).map(item => item.user_id),
+    ...bots.map(bot => `practice:${bot.id}`),
+  ]
+  if (opponents.length === 1) {
+    match = await finalizeMatch(db, match, opponents[0])
+  } else {
+    const remaining = [...players.filter(item => item.user_id !== userId), ...bots]
+    if (remaining.every(item => item.submitted_at)) match = await finalizeMatch(db, match)
+  }
+  return { match: await serializeMatch(db, match, userId), points_lost: pointsLost }
+}
+
 function validateQuizItems(items) {
   if (!Array.isArray(items) || items.length < 3 || items.length > 30) throw Object.assign(new Error('Create between 3 and 30 questions.'), { status: 400 })
   return items.map((item, index) => {
@@ -536,6 +583,7 @@ export default async function handler(request, response) {
     if (action === 'join_friend_room') return response.status(200).json(await joinFriendRoom(db, user.id, input))
     if (action === 'start_friend_room') return response.status(200).json(await startFriendRoom(db, user.id, input))
     if (action === 'submit_match') return response.status(200).json(await submitMatch(db, user.id, input))
+    if (action === 'forfeit_match') return response.status(200).json(await forfeitMatch(db, user.id, input))
     if (action === 'list_public_quizzes') return response.status(200).json(await listPublicQuizzes(db, user.id))
     if (action === 'create_public_quiz') return response.status(200).json(await createPublicQuiz(db, user.id, input))
     if (action === 'submit_public_quiz') return response.status(200).json(await submitPublicQuiz(db, user.id, input))
