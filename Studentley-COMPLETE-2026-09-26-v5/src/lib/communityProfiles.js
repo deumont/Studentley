@@ -1,16 +1,16 @@
 const rankFor = rating => rating >= 1800 ? 'Master' : rating >= 1600 ? 'Diamond' : rating >= 1400 ? 'Platinum' : rating >= 1200 ? 'Gold' : rating >= 1000 ? 'Silver' : 'Bronze'
 
 export const COMMUNITY_PROFILES = [
-  ['Emilia R.', 2140, 18, 'pro', 1790, 28, 7, '/community-avatars/emilia-lagoon.webp'],
-  ['Noah K.', 1930, 12, 'plus', 1680, 24, 9, '/community-avatars/noah-mountains.webp'],
-  ['Mia S.', 1725, 9, 'pro', 1570, 21, 10, ''],
-  ['Leo M.', 1510, 15, null, 1460, 19, 11, ''],
-  ['Sofia B.', 1310, 7, 'plus', 1390, 17, 12, ''],
-  ['Finn W.', 1115, 6, null, 1320, 15, 13, ''],
-  ['Lina H.', 890, 11, 'pro', 1240, 13, 14, ''],
-  ['Elias N.', 700, 4, null, 1130, 11, 15, ''],
-  ['Maya L.', 495, 3, 'plus', 1020, 9, 16, ''],
-  ['Ben F.', 290, 2, null, 910, 7, 18, ''],
+  ['Emilia R.', 2140, 18, 'pro', 1630, 28, 7, '/community-avatars/emilia-lagoon.webp'],
+  ['Noah K.', 1930, 12, 'plus', 1530, 24, 9, '/community-avatars/noah-mountains.webp'],
+  ['Mia S.', 1725, 9, 'pro', 1430, 21, 10, ''],
+  ['Leo M.', 1510, 15, null, 1340, 19, 11, ''],
+  ['Sofia B.', 1310, 7, 'plus', 1260, 17, 12, ''],
+  ['Finn W.', 1115, 6, null, 1190, 15, 13, ''],
+  ['Lina H.', 890, 11, 'pro', 1110, 13, 14, ''],
+  ['Elias N.', 700, 4, null, 1010, 11, 15, ''],
+  ['Maya L.', 495, 3, 'plus', 920, 9, 16, ''],
+  ['Ben F.', 290, 2, null, 820, 7, 18, ''],
 ].map(([display_name, study_points, current_streak, plan_badge, rating, wins, losses, avatar_path], index) => ({
   user_id: `community-${index + 1}`,
   display_name,
