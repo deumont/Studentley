@@ -10,6 +10,7 @@ const REVEAL_MS = 9000
 const INTERMISSION_MS = 10500
 const INTRO_FAILSAFE_MS = 90000
 const COUNTDOWN_MS = 3000
+const DOUBLE_OFFER_MS = 25000
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 const QUESTION_COUNTDOWN_PREFIX = '__quizz_show_countdown__:'
 const DOUBLE_OFFER_PREFIX = '__quizz_show_double_offer__:'
@@ -622,7 +623,7 @@ async function offerDoubleOrNothing(db, party, question) {
   const payload = { target_user_id: winner.user_id, target_name: name, wager, message: `The correct answer was ${question.correct_answer}, and ${name} got it right! Double or Nothing is on the table. Risk those ${wager} points for a chance to double them?` }
   const { data, error: updateError } = await db.from('rival_study_parties').update({
     phase: 'intermission', directed_user_id: winner.user_id, buzzed_by: null, buzzed_at: null, attempted_user_ids: [],
-    phase_deadline: new Date(Date.now() + 12000).toISOString(), host_message: markerMessage(DOUBLE_OFFER_PREFIX, payload),
+    phase_deadline: new Date(Date.now() + DOUBLE_OFFER_MS).toISOString(), host_message: markerMessage(DOUBLE_OFFER_PREFIX, payload),
   }).eq('id', party.id).eq('phase', 'reveal').eq('host_message', party.host_message).select().maybeSingle()
   if (updateError) throw updateError
   return data
