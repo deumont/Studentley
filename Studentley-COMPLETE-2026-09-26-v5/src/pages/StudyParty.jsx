@@ -168,32 +168,43 @@ export function StudyPartyRoom() {
   const speakHostLine = useCallback(async text => {
     if (!voiceEnabled || !text) return false
     stopHostVoice()
-    const context = await armHostVoice()
+    let context = await armHostVoice()
     if (!context) return false
-    const request = new AbortController()
-    speechRequestRef.current = request
-    try {
-      setVoiceStatus('Studentley is speaking…')
-      const audioData = await getPersonalAIAudio(text, request.signal, 'quiz_show')
-      const audioBuffer = await context.decodeAudioData(audioData.slice(0))
-      await new Promise((resolve, reject) => {
-        const source = context.createBufferSource()
-        audioSourceRef.current = source
-        source.buffer = audioBuffer
-        source.connect(context.destination)
-        source.onended = resolve
-        source.start(0)
-        request.signal.addEventListener('abort', () => { try { source.stop() } catch { /* Already stopped. */ }; reject(Object.assign(new Error('Stopped'), { name: 'AbortError' })) }, { once: true })
-      })
-      setVoiceStatus('')
-      return true
-    } catch (problem) {
-      if (problem.name !== 'AbortError') setVoiceStatus('Natural host voice is temporarily unavailable.')
-      return false
-    } finally {
-      speechRequestRef.current = null
-      audioSourceRef.current = null
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const request = new AbortController()
+      let source = null
+      speechRequestRef.current = request
+      try {
+        setVoiceStatus(attempt ? 'Reconnecting the AI host voice…' : 'Studentley is speaking…')
+        const audioData = await getPersonalAIAudio(text, request.signal, 'quiz_show')
+        if (context.state === 'suspended') await context.resume()
+        const audioBuffer = await context.decodeAudioData(audioData.slice(0))
+        await new Promise((resolve, reject) => {
+          source = context.createBufferSource()
+          audioSourceRef.current = source
+          source.buffer = audioBuffer
+          source.connect(context.destination)
+          source.onended = resolve
+          source.start(0)
+          request.signal.addEventListener('abort', () => { try { source.stop() } catch { /* Already stopped. */ }; reject(Object.assign(new Error('Stopped'), { name: 'AbortError' })) }, { once: true })
+        })
+        setVoiceStatus('')
+        return true
+      } catch (problem) {
+        if (problem.name === 'AbortError') return false
+        if (attempt === 2) {
+          setVoiceStatus('The AI host voice is reconnecting for the next announcement.')
+          return false
+        }
+        await new Promise(resolve => setTimeout(resolve, 500 * (attempt + 1)))
+        context = await armHostVoice()
+        if (!context) return false
+      } finally {
+        if (speechRequestRef.current === request) speechRequestRef.current = null
+        if (audioSourceRef.current === source) audioSourceRef.current = null
+      }
     }
+    return false
   }, [armHostVoice, stopHostVoice, voiceEnabled])
 
   useEffect(() => {
@@ -221,7 +232,8 @@ export function StudyPartyRoom() {
       const target = party.phase === 'double_intro'
         ? `${directed?.display_name || 'Player'}, this is Double or Nothing. `
         : ''
-      const spoken = await speakHostLine(`${target}${party.question.prompt}`)
+      const swapIntro = party.question.swap_round ? 'Score Swap Round. Everyone can answer. The winner must swap their total points with another player. ' : ''
+      const spoken = await speakHostLine(`${target}${swapIntro}${party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
       if (party.is_host) {
         try { syncEpochRef.current += 1; setParty((await startStudyPartyCountdown(party.id)).party) }
@@ -229,7 +241,7 @@ export function StudyPartyRoom() {
       }
     }
     run()
-  }, [load, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.reveal_announcement, party?.status, speakHostLine])
+  }, [load, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.swap_round, party?.reveal_announcement, party?.status, speakHostLine])
 
   useEffect(() => {
     if (!['countdown', 'double_countdown'].includes(party?.phase)) return
@@ -309,11 +321,12 @@ export function StudyPartyRoom() {
     <div className="study-party-stage">
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
         {party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
-          <div className="study-party-question-top"><span><Radio /> {roundNames[party.question?.round_type]}</span>{party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
+          <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Winner swaps scores</b> : party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
           <small>{party.question?.difficulty} · {party.question?.topic} · {party.question?.points}{party.question?.is_final ? ' × 2' : ''} pts</small>
           <h1>{party.question?.prompt}</h1>
-          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <><PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
+          {party.question?.swap_round && party.phase !== 'reveal' && <div className="study-party-swap-notice"><Coins /><span><b>Score Swap is active</b><small>The first correct player swaps their total points with another player.</small></span></div>}
+          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <>{party.swap_result && <SwapResult result={party.swap_result} />}<PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
         </>}
       </main>
       <PartyScoreboard party={party} />
@@ -329,6 +342,10 @@ function PersonalQuestionResult({ result }) {
   const label = !result.answered ? 'No answer locked' : positive ? 'Correct!' : 'Not quite'
   const points = Number(result.points || 0)
   return <div className={`study-party-personal-result ${positive ? 'correct' : 'wrong'}`} role="status"><span>{positive ? <Check /> : <AlertTriangle />}</span><div><b>{label}</b><small>{points > 0 ? `+${points} points` : points < 0 ? `${points} points` : '0 points'}</small></div></div>
+}
+
+function SwapResult({ result }) {
+  return <div className="study-party-swap-result"><Coins /><div><small>Score Swap complete</small><b>{result.winner_name} ↔ {result.opponent_name}</b><p>{result.winner_name}: {result.winner_score} points · {result.opponent_name}: {result.opponent_score} points</p></div></div>
 }
 
 function DoubleOffer({ party, onRespond, working, pendingAction, seconds }) {

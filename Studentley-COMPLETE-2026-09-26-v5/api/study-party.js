@@ -17,6 +17,7 @@ const DOUBLE_INTRO_PREFIX = '__quizz_show_double_intro__:'
 const DOUBLE_COUNTDOWN_PREFIX = '__quizz_show_double_countdown__:'
 const DOUBLE_ACTIVE_PREFIX = '__quizz_show_double_active__:'
 const DOUBLE_RESULT_PREFIX = '__quizz_show_double_result__:'
+const SWAP_RESULT_PREFIX = '__quizz_show_swap_result__:'
 
 function serviceClient() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase server settings are missing.'), { status: 503 })
@@ -47,11 +48,13 @@ const doubleState = party => {
   }
   return null
 }
+const swapState = party => markerPayload(party, SWAP_RESULT_PREFIX)
 const publicHostMessage = party => isQuestionIntro(party)
   ? String(party.host_message).slice(QUESTION_INTRO_PREFIX.length)
   : isQuestionCountdown(party)
     ? String(party.host_message).slice(QUESTION_COUNTDOWN_PREFIX.length)
-    : doubleState(party)?.payload?.message || party.host_message
+    : doubleState(party)?.payload?.message || swapState(party)?.message || party.host_message
+const requiresBuzzer = question => Boolean(question?.swap_round) || BUZZER_ROUNDS.has(question?.round_type)
 
 async function getPartyRecord(db, identifier) {
   const query = db.from('rival_study_parties').select('*')
@@ -92,8 +95,9 @@ function publicQuestion(question, reveal, answersVisible) {
     time_limit: playableTimeLimit(question),
     points: question.points,
     directed: false,
+    swap_round: Boolean(question.swap_round),
     is_final: Boolean(question.is_final),
-    requires_buzzer: BUZZER_ROUNDS.has(question.round_type),
+    requires_buzzer: requiresBuzzer(question),
   }
 }
 
@@ -134,6 +138,7 @@ async function serializeParty(db, party, userId) {
   const profiles = await getProfiles(db, players.map(player => player.user_id))
   const answers = answerResult.data || []
   const double = doubleState(party)
+  const swap = swapState(party)
   const publicPlayers = players.map(player => {
     const profile = profiles.get(player.user_id)
     const total = Number(player.correct_answers || 0) + Number(player.wrong_answers || 0)
@@ -176,7 +181,7 @@ async function serializeParty(db, party, userId) {
   const winners = correctNames.join(', ')
   const revealStyle = Math.abs(Number(party.current_question || 0)) % 3
   const revealAnnouncement = reveal && !double
-    ? correctNames.length
+    ? swap?.message || (correctNames.length
       ? [
           `Yes! ${winners} got it right${correctPoints ? ` for up to ${correctPoints} points` : ''}. The correct answer was ${question?.correct_answer}.`,
           `What a play! ${winners} found the answer${correctPoints ? ` and earned up to ${correctPoints} points` : ''}. It was ${question?.correct_answer}.`,
@@ -186,7 +191,7 @@ async function serializeParty(db, party, userId) {
           `No one got it this time. The correct answer was ${question?.correct_answer}.`,
           `That one caught everyone out! The answer was ${question?.correct_answer}.`,
           `A tough round! Nobody scored, and the correct answer was ${question?.correct_answer}.`,
-        ][revealStyle]
+        ][revealStyle])
     : doubleReveal
       ? double.payload.message
       : ''
@@ -224,6 +229,7 @@ async function serializeParty(db, party, userId) {
     reveal_announcement: revealAnnouncement,
     current_user_result: currentUserResult,
     double_or_nothing: double ? { ...double.payload, phase: double.phase, is_target: double.payload.target_user_id === userId } : null,
+    swap_result: swap,
     winner_user_id: party.winner_user_id,
     winner_team: party.winner_team,
     started_at: party.started_at,
@@ -335,8 +341,14 @@ async function generateQuestions(db, userId, input, document) {
       follow_up_correct_answer: followUpCorrect,
       follow_up_explanation: safeText(question.follow_up_explanation, 700),
       follow_up_eligible: followUpIndexes.includes(index) && index !== count - 1 && followUpOptions.length === 4 && followUpOptions.some(option => normalize(option) === normalize(followUpCorrect)),
+      swap_round: false,
     }
   })
+  const swapCount = Math.min(3, Math.floor(Math.random() * 4))
+  const swapCandidates = questions.map((question, index) => ({ question, index }))
+    .filter(item => !item.question.is_final && !item.question.follow_up_eligible)
+    .sort(() => Math.random() - 0.5)
+  for (const item of swapCandidates.slice(0, swapCount)) item.question.swap_round = true
   if (questions.length !== count || questions.some(question => !question.prompt || !question.correct_answer)) throw Object.assign(new Error('The AI host did not prepare a complete question set. Please try again.'), { status: 502 })
   if (questions.some(question => !question.options.length && question.correct_answer.split(/\s+/).length !== 1)) throw Object.assign(new Error('The AI host created a written-response question. Please try again.'), { status: 502 })
   return { title: safeText(parsed.title || input.title || 'Quizz Show', 120), questions }
@@ -411,6 +423,7 @@ function chooseNextQuestion(party, players) {
 }
 
 function roundIntro(question) {
+  if (question.swap_round) return 'Score Swap Round! Everyone can buzz. The winner must swap their total score with another player.'
   return `${roundName(question.round_type)}! ${question.is_final ? 'Double points are live.' : `${question.difficulty} difficulty.`}`
 }
 
@@ -597,7 +610,7 @@ async function queueNextQuestion(db, party) {
 }
 
 async function offerDoubleOrNothing(db, party, question) {
-  if (!question?.follow_up_eligible || !question.follow_up_prompt) return null
+  if (question?.swap_round || !question?.follow_up_eligible || !question.follow_up_prompt) return null
   const { data: winner, error } = await db.from('rival_study_party_answers')
     .select('user_id,points,response_ms').eq('party_id', party.id).eq('question_index', party.current_question)
     .eq('correct', true).order('response_ms', { ascending: true }).limit(1).maybeSingle()
@@ -698,7 +711,7 @@ async function buzz(db, userId, input) {
   const player = players.find(item => item.user_id === userId)
   if (!player) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
   const question = party.questions?.[party.current_question]
-  if (party.status !== 'active' || party.phase !== 'question' || !question || !BUZZER_ROUNDS.has(question.round_type)) throw Object.assign(new Error('The buzzer is not open.'), { status: 409 })
+  if (party.status !== 'active' || party.phase !== 'question' || !question || !requiresBuzzer(question)) throw Object.assign(new Error('The buzzer is not open.'), { status: 409 })
   if (!party.phase_deadline || Date.now() > new Date(party.phase_deadline).getTime() + 1000) throw Object.assign(new Error('Time is up for this question.'), { status: 409 })
   if ((party.attempted_user_ids || []).includes(userId)) throw Object.assign(new Error('You already attempted this question.'), { status: 409 })
   const profiles = await getProfiles(db, [userId])
@@ -729,6 +742,35 @@ function nextTopicStats(current, topic, correct) {
   return stats
 }
 
+async function applyScoreSwap(db, party, winnerUserId, correctAnswer) {
+  const players = await getPartyPlayers(db, party.id)
+  const winner = players.find(player => player.user_id === winnerUserId)
+  if (!winner || players.length < 2) return null
+  const opponents = players.filter(player => player.user_id !== winnerUserId)
+  const preferred = party.game_mode === 'teams' ? opponents.filter(player => player.team !== winner.team) : opponents
+  const pool = preferred.length ? preferred : opponents
+  const opponent = pool[Math.floor(Math.random() * pool.length)]
+  const winnerScore = Number(winner.score || 0)
+  const opponentScore = Number(opponent.score || 0)
+  const { error } = await db.from('rival_study_party_players').upsert([
+    { party_id: party.id, user_id: winner.user_id, score: opponentScore },
+    { party_id: party.id, user_id: opponent.user_id, score: winnerScore },
+  ], { onConflict: 'party_id,user_id' })
+  if (error) throw error
+  const profiles = await getProfiles(db, [winner.user_id, opponent.user_id])
+  const winnerName = playerName(profiles.get(winner.user_id))
+  const opponentName = playerName(profiles.get(opponent.user_id))
+  return {
+    winner_user_id: winner.user_id,
+    winner_name: winnerName,
+    opponent_user_id: opponent.user_id,
+    opponent_name: opponentName,
+    winner_score: opponentScore,
+    opponent_score: winnerScore,
+    message: `Score Swap! ${winnerName} got it right. The correct answer was ${correctAnswer}. Now ${winnerName} and ${opponentName} must swap their total points! ${winnerName} has ${opponentScore}, and ${opponentName} has ${winnerScore}. What a twist!`,
+  }
+}
+
 async function submitAnswer(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   const players = await getPartyPlayers(db, party.id)
@@ -748,14 +790,14 @@ async function submitAnswer(db, userId, input) {
   }
   if (party.status !== 'active' || party.phase !== 'question' || !question) throw Object.assign(new Error('Answers are closed for this question.'), { status: 409 })
   if (!party.phase_deadline || Date.now() > new Date(party.phase_deadline).getTime() + 1000) throw Object.assign(new Error('Time is up for this question.'), { status: 409 })
-  const requiresBuzzer = BUZZER_ROUNDS.has(question.round_type)
-  if (requiresBuzzer && party.buzzed_by !== userId) throw Object.assign(new Error('Buzz first before answering.'), { status: 409 })
+  const buzzerRequired = requiresBuzzer(question)
+  if (buzzerRequired && party.buzzed_by !== userId) throw Object.assign(new Error('Buzz first before answering.'), { status: 409 })
   const answer = safeText(input.answer, 1000)
   if (!question.options?.length && answer.split(/\s+/).filter(Boolean).length !== 1) throw Object.assign(new Error('Use exactly one word for this answer.'), { status: 400 })
   const correct = answerIsCorrect(question, answer)
   const deadline = new Date(party.phase_deadline).getTime()
   const timeLimitMs = playableTimeLimit(question) * 1000
-  const startedAt = party.buzzed_at && requiresBuzzer ? new Date(party.buzzed_at).getTime() : deadline - timeLimitMs
+  const startedAt = party.buzzed_at && buzzerRequired ? new Date(party.buzzed_at).getTime() : deadline - timeLimitMs
   const responseMs = Math.max(0, Math.min(timeLimitMs, Date.now() - startedAt))
   const nextStreak = correct ? Number(player.streak || 0) + 1 : 0
   const timeBonus = correct ? Math.max(0, Math.round(50 * (1 - responseMs / timeLimitMs))) : 0
@@ -774,15 +816,17 @@ async function submitAnswer(db, userId, input) {
     topic_stats: nextTopicStats(player.topic_stats, question.topic || party.topic || party.subject, correct),
   }).eq('party_id', party.id).eq('user_id', userId)
   if (playerError) throw playerError
+  const swapResult = correct && question.swap_round ? await applyScoreSwap(db, party, userId, question.correct_answer) : null
   const profiles = await getProfiles(db, [userId])
   const name = playerName(profiles.get(userId))
   let updatedParty
-  if (requiresBuzzer && correct) {
+  if (buzzerRequired && correct) {
     const streakCopy = nextStreak >= 3 ? ` ${name} has a ${nextStreak}-answer streak!` : ''
-    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `${name} is correct for ${points} points!${streakCopy}` }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
+    const hostMessage = swapResult ? markerMessage(SWAP_RESULT_PREFIX, swapResult) : `${name} is correct for ${points} points!${streakCopy}`
+    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: hostMessage }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
     if (error) throw error
     updatedParty = data
-  } else if (requiresBuzzer) {
+  } else if (buzzerRequired) {
     const attempted = [...new Set([...(party.attempted_user_ids || []), userId])]
     const exhausted = attempted.length >= players.length
     const changes = exhausted
