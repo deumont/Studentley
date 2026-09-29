@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { ArrowLeft, Gauge, Library, Menu, Settings, Swords, Trophy, Users, X } from 'lucide-react'
+import { ArrowLeft, Gauge, Library, Menu, PartyPopper, Settings, Swords, Trophy, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import BrandWordmark from './BrandWordmark'
 import { ProfileAvatar } from './UI'
@@ -9,6 +9,7 @@ const links = [
   ['/rivals', Gauge, 'Overview', true],
   ['/rivals/ranked', Trophy, 'Ranked', false],
   ['/rivals/friends', Users, 'Friend Battles', false],
+  ['/rivals/party', PartyPopper, 'Study Party', false],
   ['/rivals/quizzes', Library, 'Quiz Library', false],
 ]
 

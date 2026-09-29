@@ -21,6 +21,7 @@ import GenerationStatus from './components/GenerationStatus'
 import SeoManager from './components/SeoManager'
 import RivalsLayout from './components/RivalsLayout'
 import RivalsDashboard, { FriendRivals, RankedRivals, RivalMatch, RivalQuizLibrary } from './pages/Rivals'
+import StudyPartyHome, { StudyPartyRoom } from './pages/StudyParty'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile } = useApp()
@@ -54,6 +55,8 @@ export default function App() {
         <Route index element={<RivalsDashboard />} />
         <Route path="ranked" element={<RankedRivals />} />
         <Route path="friends" element={<FriendRivals />} />
+        <Route path="party" element={<StudyPartyHome />} />
+        <Route path="party/:id" element={<StudyPartyRoom />} />
         <Route path="quizzes" element={<RivalQuizLibrary />} />
         <Route path="match/:id" element={<RivalMatch />} />
       </Route>
