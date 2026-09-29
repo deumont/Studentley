@@ -21,6 +21,7 @@ export const startStudyParty = partyId => studyPartyRequest('start', { partyId }
 export const startStudyPartyCountdown = partyId => studyPartyRequest('start_countdown', { partyId })
 export const openStudyPartyQuestion = partyId => studyPartyRequest('open_question', { partyId })
 export const respondStudyPartyDouble = (partyId, accept) => studyPartyRequest('double_or_nothing', { partyId, accept })
+export const spinStudyPartyWheel = partyId => studyPartyRequest('spin_wheel', { partyId })
 export const buzzStudyParty = partyId => studyPartyRequest('buzz', { partyId })
 export const answerStudyParty = (partyId, answer) => studyPartyRequest('answer', { partyId, answer })
 export const quitStudyParty = partyId => studyPartyRequest('quit', { partyId })

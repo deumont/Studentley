@@ -11,6 +11,8 @@ const INTERMISSION_MS = 15000
 const INTRO_FAILSAFE_MS = 90000
 const COUNTDOWN_MS = 3000
 const DOUBLE_OFFER_MS = 25000
+const SPECIAL_CHOICE_MS = 25000
+const WHEEL_SPIN_MS = 4500
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 const QUESTION_COUNTDOWN_PREFIX = '__quizz_show_countdown__:'
 const DOUBLE_OFFER_PREFIX = '__quizz_show_double_offer__:'
@@ -19,6 +21,9 @@ const DOUBLE_COUNTDOWN_PREFIX = '__quizz_show_double_countdown__:'
 const DOUBLE_ACTIVE_PREFIX = '__quizz_show_double_active__:'
 const DOUBLE_RESULT_PREFIX = '__quizz_show_double_result__:'
 const SWAP_RESULT_PREFIX = '__quizz_show_swap_result__:'
+const WHEEL_OFFER_PREFIX = '__quizz_show_wheel_offer__:'
+const WHEEL_SPINNING_PREFIX = '__quizz_show_wheel_spinning__:'
+const WHEEL_RESULT_PREFIX = '__quizz_show_wheel_result__:'
 
 function serviceClient() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase server settings are missing.'), { status: 503 })
@@ -50,11 +55,18 @@ const doubleState = party => {
   return null
 }
 const swapState = party => markerPayload(party, SWAP_RESULT_PREFIX)
+const wheelState = party => {
+  for (const [phase, prefix] of [['wheel_offer', WHEEL_OFFER_PREFIX], ['wheel_spinning', WHEEL_SPINNING_PREFIX], ['wheel_result', WHEEL_RESULT_PREFIX]]) {
+    const payload = markerPayload(party, prefix)
+    if (payload) return { phase, prefix, payload }
+  }
+  return null
+}
 const publicHostMessage = party => isQuestionIntro(party)
   ? String(party.host_message).slice(QUESTION_INTRO_PREFIX.length)
   : isQuestionCountdown(party)
     ? String(party.host_message).slice(QUESTION_COUNTDOWN_PREFIX.length)
-    : doubleState(party)?.payload?.message || swapState(party)?.message || party.host_message
+    : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || party.host_message
 const requiresBuzzer = question => Boolean(question?.swap_round) || BUZZER_ROUNDS.has(question?.round_type)
 
 async function getPartyRecord(db, identifier) {
@@ -140,6 +152,7 @@ async function serializeParty(db, party, userId) {
   const answers = answerResult.data || []
   const double = doubleState(party)
   const swap = swapState(party)
+  const wheel = wheelState(party)
   const publicPlayers = players.map(player => {
     const profile = profiles.get(player.user_id)
     const total = Number(player.correct_answers || 0) + Number(player.wrong_answers || 0)
@@ -170,19 +183,22 @@ async function serializeParty(db, party, userId) {
   const questionIntro = isQuestionIntro(party)
   const questionCountdown = isQuestionCountdown(party)
   const reveal = party.phase === 'reveal' || party.status === 'completed'
+  const questionReveal = reveal
   const doubleReveal = double?.phase === 'double_reveal'
   const shownQuestion = double
     ? double.phase === 'double_offer'
       ? publicQuestion(question, true, true)
       : publicFollowUpQuestion(question, doubleReveal, double.phase === 'double_question' || doubleReveal, Number(double.payload?.wager || 0))
-    : publicQuestion(question, reveal, party.phase === 'question' || reveal)
+    : publicQuestion(question, questionReveal, party.phase === 'question' || questionReveal)
   const correctAnswers = answers.filter(answer => answer.correct)
   const correctNames = correctAnswers.map(answer => playerName(profiles.get(answer.user_id)))
   const correctPoints = correctAnswers.reduce((highest, answer) => Math.max(highest, Number(answer.points || 0)), 0)
   const winners = correctNames.join(', ')
   const revealStyle = Math.abs(Number(party.current_question || 0)) % 3
   const revealAnnouncement = reveal && !double
-    ? swap?.message || (correctNames.length
+    ? wheel?.phase === 'wheel_result'
+      ? wheel.payload.message
+      : swap?.message || (correctNames.length
       ? [
           `Yes! ${winners} got it right${correctPoints ? ` for up to ${correctPoints} points` : ''}. The correct answer was ${question?.correct_answer}.`,
           `What a play! ${winners} found the answer${correctPoints ? ` and earned up to ${correctPoints} points` : ''}. It was ${question?.correct_answer}.`,
@@ -199,7 +215,7 @@ async function serializeParty(db, party, userId) {
   const ownAnswer = answers.find(answer => answer.user_id === userId)
   const currentUserResult = doubleReveal && double.payload.target_user_id === userId
     ? { correct: Boolean(double.payload.correct), points: Number(double.payload.delta || 0), answered: true, double_or_nothing: true }
-    : reveal && !double
+    : questionReveal && !double && !wheel
       ? ownAnswer
         ? { correct: Boolean(ownAnswer.correct), points: Number(ownAnswer.points || 0), answered: true, double_or_nothing: false }
         : { correct: false, points: 0, answered: false, double_or_nothing: false }
@@ -216,7 +232,7 @@ async function serializeParty(db, party, userId) {
     difficulty: party.difficulty,
     game_mode: party.game_mode,
     status: party.status,
-    phase: double?.phase || (questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
+    phase: double?.phase || wheel?.phase || (questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
     max_players: party.max_players,
     question_count: party.question_count,
     question_number: party.used_question_indexes?.length || 0,
@@ -231,6 +247,7 @@ async function serializeParty(db, party, userId) {
     current_user_result: currentUserResult,
     double_or_nothing: double ? { ...double.payload, phase: double.phase, is_target: double.payload.target_user_id === userId } : null,
     swap_result: swap,
+    wheel_event: wheel ? { ...wheel.payload, outcome: wheel.phase === 'wheel_result' ? wheel.payload.outcome : null, phase: wheel.phase, is_target: wheel.payload.target_user_id === userId } : null,
     winner_user_id: party.winner_user_id,
     winner_team: party.winner_team,
     started_at: party.started_at,
@@ -343,6 +360,7 @@ async function generateQuestions(db, userId, input, document) {
       follow_up_explanation: safeText(question.follow_up_explanation, 700),
       follow_up_eligible: followUpIndexes.includes(index) && index !== count - 1 && followUpOptions.length === 4 && followUpOptions.some(option => normalize(option) === normalize(followUpCorrect)),
       swap_round: false,
+      wheel_trigger_turn: null,
     }
   })
   const swapCount = Math.min(3, Math.floor(Math.random() * 4))
@@ -350,6 +368,11 @@ async function generateQuestions(db, userId, input, document) {
     .filter(item => !item.question.is_final && !item.question.follow_up_eligible)
     .sort(() => Math.random() - 0.5)
   for (const item of swapCandidates.slice(0, swapCount)) item.question.swap_round = true
+  if (questions.length) {
+    const earliestWheel = Math.max(2, Math.floor(count * 0.4))
+    const latestWheel = Math.max(earliestWheel, Math.min(count - 2, Math.ceil(count * 0.65)))
+    questions[0].wheel_trigger_turn = earliestWheel + Math.floor(Math.random() * (latestWheel - earliestWheel + 1))
+  }
   if (questions.length !== count || questions.some(question => !question.prompt || !question.correct_answer)) throw Object.assign(new Error('The AI host did not prepare a complete question set. Please try again.'), { status: 502 })
   if (questions.some(question => !question.options.length && question.correct_answer.split(/\s+/).length !== 1)) throw Object.assign(new Error('The AI host created a written-response question. Please try again.'), { status: 502 })
   return { title: safeText(parsed.title || input.title || 'Quizz Show', 120), questions }
@@ -490,7 +513,7 @@ async function respondDoubleOrNothing(db, userId, input) {
   const state = doubleState(party)
   if (state?.phase !== 'double_offer') throw Object.assign(new Error('That Double or Nothing offer is no longer open.'), { status: 409 })
   if (state.payload.target_user_id !== userId) throw Object.assign(new Error('This offer belongs to another player.'), { status: 403 })
-  if (!input.accept) return { party: await serializeParty(db, await queueNextQuestion(db, party), userId), declined: true }
+  if (!input.accept) return { party: await serializeParty(db, await finishQuestionFlow(db, party), userId), declined: true }
   const message = `${state.payload.target_name} accepts! Double or Nothing for ${state.payload.wager} points. Here comes the follow-up question.`
   const payload = { ...state.payload, message }
   const { data, error } = await db.from('rival_study_parties').update({
@@ -549,7 +572,7 @@ async function quitParty(db, userId, input) {
   }
   const refreshed = await getPartyRecord(db, party.id)
   if (party.status === 'active' && remaining.length === 1) await completeParty(db, refreshed)
-  else if (doubleState(refreshed)?.payload?.target_user_id === userId) await queueNextQuestion(db, refreshed)
+  else if (doubleState(refreshed)?.payload?.target_user_id === userId || wheelState(refreshed)?.payload?.target_user_id === userId) await queueNextQuestion(db, refreshed)
   return { quit: true, deducted }
 }
 
@@ -670,6 +693,7 @@ async function advanceParty(db, party) {
   const questions = Array.isArray(party.questions) ? party.questions : []
   const current = Number.isInteger(party.current_question) ? questions[party.current_question] : null
   const double = doubleState(party)
+  const wheel = wheelState(party)
   if (party.phase === 'question' && double?.phase === 'double_question') return finishDoubleRound(db, party)
   if (party.phase === 'question') {
     const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `Time! The answer was ${current?.correct_answer || 'not submitted'}.` }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
@@ -677,7 +701,9 @@ async function advanceParty(db, party) {
     return data || getPartyRecord(db, party.id)
   }
   if (party.phase === 'intermission' && current) {
-    if (double?.phase === 'double_offer') return queueNextQuestion(db, party)
+    if (wheel?.phase === 'wheel_offer') return beginComebackWheelSpin(db, party)
+    if (wheel?.phase === 'wheel_spinning') return finishWheelSpin(db, party)
+    if (double?.phase === 'double_offer') return finishQuestionFlow(db, party)
     const changes = double?.phase === 'double_intro'
       ? { phase: 'intermission', phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(), host_message: markerMessage(DOUBLE_COUNTDOWN_PREFIX, double.payload) }
       : double?.phase === 'double_countdown'
@@ -692,10 +718,11 @@ async function advanceParty(db, party) {
     return data || getPartyRecord(db, party.id)
   }
   if (party.phase !== 'reveal') return party
-  if (double?.phase === 'double_reveal') return queueNextQuestion(db, party)
+  if (wheel?.phase === 'wheel_result') return queueNextQuestion(db, party)
+  if (double?.phase === 'double_reveal' || swapState(party)) return finishQuestionFlow(db, party)
   const offered = await offerDoubleOrNothing(db, party, current)
   if (offered) return offered
-  return queueNextQuestion(db, party)
+  return finishQuestionFlow(db, party)
 }
 
 async function loadParty(db, userId, input) {
@@ -743,33 +770,143 @@ function nextTopicStats(current, topic, correct) {
   return stats
 }
 
-async function applyScoreSwap(db, party, winnerUserId, correctAnswer) {
+async function swapPlayerScores(db, party, firstUserId, secondUserId) {
+  if (!firstUserId || !secondUserId || firstUserId === secondUserId) throw Object.assign(new Error('Choose another player for the score swap.'), { status: 400 })
+  const players = await getPartyPlayers(db, party.id)
+  const first = players.find(player => player.user_id === firstUserId)
+  const second = players.find(player => player.user_id === secondUserId)
+  if (!first || !second) throw Object.assign(new Error('That player is no longer in the Quizz Show.'), { status: 404 })
+  const firstScore = Number(first.score || 0)
+  const secondScore = Number(second.score || 0)
+  const { data: firstUpdated, error: firstError } = await db.from('rival_study_party_players').update({ score: secondScore }).eq('party_id', party.id).eq('user_id', first.user_id).select('score').maybeSingle()
+  if (firstError || !firstUpdated) throw firstError || new Error('The first score could not be swapped.')
+  const { data: secondUpdated, error: secondError } = await db.from('rival_study_party_players').update({ score: firstScore }).eq('party_id', party.id).eq('user_id', second.user_id).select('score').maybeSingle()
+  if (secondError || !secondUpdated) {
+    await db.from('rival_study_party_players').update({ score: firstScore }).eq('party_id', party.id).eq('user_id', first.user_id)
+    throw secondError || new Error('The second score could not be swapped.')
+  }
+  const { data: verified, error: verifyError } = await db.from('rival_study_party_players').select('user_id,score').eq('party_id', party.id).in('user_id', [first.user_id, second.user_id])
+  if (verifyError) throw verifyError
+  const verifiedFirst = verified?.find(player => player.user_id === first.user_id)
+  const verifiedSecond = verified?.find(player => player.user_id === second.user_id)
+  if (Number(verifiedFirst?.score) !== secondScore || Number(verifiedSecond?.score) !== firstScore) throw new Error('The score swap could not be verified.')
+  const profiles = await getProfiles(db, [first.user_id, second.user_id])
+  return {
+    first_user_id: first.user_id,
+    first_name: playerName(profiles.get(first.user_id)),
+    second_user_id: second.user_id,
+    second_name: playerName(profiles.get(second.user_id)),
+    first_score: secondScore,
+    second_score: firstScore,
+  }
+}
+
+async function applyAutomaticScoreSwap(db, party, winnerUserId, correctAnswer) {
   const players = await getPartyPlayers(db, party.id)
   const winner = players.find(player => player.user_id === winnerUserId)
-  if (!winner || players.length < 2) return null
+  if (!winner) return getPartyRecord(db, party.id)
   const opponents = players.filter(player => player.user_id !== winnerUserId)
-  const preferred = party.game_mode === 'teams' ? opponents.filter(player => player.team !== winner.team) : opponents
-  const pool = preferred.length ? preferred : opponents
-  const opponent = pool[Math.floor(Math.random() * pool.length)]
-  const winnerScore = Number(winner.score || 0)
-  const opponentScore = Number(opponent.score || 0)
-  const { error } = await db.from('rival_study_party_players').upsert([
-    { party_id: party.id, user_id: winner.user_id, score: opponentScore },
-    { party_id: party.id, user_id: opponent.user_id, score: winnerScore },
-  ], { onConflict: 'party_id,user_id' })
-  if (error) throw error
-  const profiles = await getProfiles(db, [winner.user_id, opponent.user_id])
-  const winnerName = playerName(profiles.get(winner.user_id))
-  const opponentName = playerName(profiles.get(opponent.user_id))
-  return {
-    winner_user_id: winner.user_id,
-    winner_name: winnerName,
-    opponent_user_id: opponent.user_id,
-    opponent_name: opponentName,
-    winner_score: opponentScore,
-    opponent_score: winnerScore,
-    message: `Score Swap! ${winnerName} got it right. The correct answer was ${correctAnswer}. Now ${winnerName} and ${opponentName} must swap their total points! ${winnerName} has ${opponentScore}, and ${opponentName} has ${winnerScore}. What a twist!`,
+  const highestOtherScore = Math.max(...opponents.map(player => Number(player.score || 0)), 0)
+  const profiles = await getProfiles(db, players.map(player => player.user_id))
+  const winnerName = playerName(profiles.get(winnerUserId))
+  if (Number(winner.score || 0) >= highestOtherScore) {
+    const payload = { skipped: true, winner_user_id: winnerUserId, winner_name: winnerName, winner_score: Number(winner.score || 0), message: `${winnerName} wins the Score Swap Round! The correct answer was ${correctAnswer}. But ${winnerName} already has the highest score, so no swap is needed.` }
+    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: markerMessage(SWAP_RESULT_PREFIX, payload) }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
+    if (error) throw error
+    return data || getPartyRecord(db, party.id)
   }
+  const opposingTeam = party.game_mode === 'teams' ? opponents.filter(player => player.team !== winner.team) : opponents
+  const opponentPool = opposingTeam.length ? opposingTeam : opponents
+  const opponent = opponentPool[Math.floor(Math.random() * opponentPool.length)]
+  const swap = await swapPlayerScores(db, party, winnerUserId, opponent.user_id)
+  const payload = {
+    winner_user_id: winnerUserId,
+    winner_name: swap.first_name,
+    opponent_user_id: swap.second_user_id,
+    opponent_name: swap.second_name,
+    winner_score: swap.first_score,
+    opponent_score: swap.second_score,
+    message: `Score Swap! ${swap.first_name} wins the round, and the random draw pairs them with ${swap.second_name}. Their totals switch: ${swap.first_name} now has ${swap.first_score}, and ${swap.second_name} has ${swap.second_score}.`,
+  }
+  const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), directed_user_id: null, host_message: markerMessage(SWAP_RESULT_PREFIX, payload) }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
+  if (error) throw error
+  return data || getPartyRecord(db, party.id)
+}
+
+const wheelTriggerTurn = party => Number(party.questions?.[0]?.wheel_trigger_turn || 0)
+
+async function offerComebackWheel(db, party) {
+  const triggerTurn = wheelTriggerTurn(party)
+  if (!triggerTurn || Number(party.used_question_indexes?.length || 0) !== triggerTurn) return null
+  const players = await getPartyPlayers(db, party.id)
+  if (players.length < 2) return null
+  const lowestScore = Math.min(...players.map(player => Number(player.score || 0)))
+  const lowestPlayers = players.filter(player => Number(player.score || 0) === lowestScore)
+  const target = lowestPlayers[Math.floor(Math.random() * lowestPlayers.length)]
+  const profiles = await getProfiles(db, [target.user_id])
+  const targetName = playerName(profiles.get(target.user_id))
+  const payload = { target_user_id: target.user_id, target_name: targetName, message: `${targetName} is currently in last place, but the Comeback Wheel is here! Spin for bonus points, a penalty, or a dramatic score swap.` }
+  const { data, error } = await db.from('rival_study_parties').update({ phase: 'intermission', phase_deadline: new Date(Date.now() + SPECIAL_CHOICE_MS).toISOString(), directed_user_id: target.user_id, buzzed_by: null, buzzed_at: null, host_message: markerMessage(WHEEL_OFFER_PREFIX, payload) }).eq('id', party.id).eq('phase', party.phase).eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return data
+}
+
+async function finishQuestionFlow(db, party) {
+  const wheelParty = await offerComebackWheel(db, party)
+  return wheelParty || queueNextQuestion(db, party)
+}
+
+async function beginComebackWheelSpin(db, party) {
+  const state = wheelState(party)
+  if (state?.phase !== 'wheel_offer') return party
+  const outcomes = [50, 100, 100, 150, 200, 300, 400, -50, 'swap', 'swap']
+  const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
+  const payload = { ...state.payload, outcome, message: `${state.payload.target_name} is spinning the Comeback Wheel!` }
+  const { data, error } = await db.from('rival_study_parties').update({ phase: 'intermission', phase_deadline: new Date(Date.now() + WHEEL_SPIN_MS).toISOString(), host_message: markerMessage(WHEEL_SPINNING_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return data || getPartyRecord(db, party.id)
+}
+
+async function spinComebackWheel(db, userId, input) {
+  const party = await getPartyRecord(db, input.partyId)
+  const state = wheelState(party)
+  if (state?.phase !== 'wheel_offer') throw Object.assign(new Error('The Comeback Wheel is not ready to spin.'), { status: 409 })
+  if (state.payload.target_user_id !== userId) throw Object.assign(new Error('This Comeback Wheel belongs to another player.'), { status: 403 })
+  return { party: await serializeParty(db, await beginComebackWheelSpin(db, party), userId) }
+}
+
+async function finishWheelSpin(db, party) {
+  const state = wheelState(party)
+  if (state?.phase !== 'wheel_spinning') return party
+  if (state.payload.outcome === 'swap') {
+    const players = await getPartyPlayers(db, party.id)
+    const wheelPlayer = players.find(player => player.user_id === state.payload.target_user_id)
+    const opponents = players.filter(player => player.user_id !== state.payload.target_user_id)
+    if (!opponents.length) return party
+    const opposingTeam = party.game_mode === 'teams' ? opponents.filter(player => player.team !== wheelPlayer?.team) : opponents
+    const meaningful = (opposingTeam.length ? opposingTeam : opponents).filter(player => Number(player.score || 0) !== Number(wheelPlayer?.score || 0))
+    const pool = meaningful.length ? meaningful : opposingTeam.length ? opposingTeam : opponents
+    const opponent = pool[Math.floor(Math.random() * pool.length)]
+    const swap = await swapPlayerScores(db, party, state.payload.target_user_id, opponent.user_id)
+    const payload = { ...state.payload, opponent_user_id: swap.second_user_id, opponent_name: swap.second_name, target_score: swap.first_score, opponent_score: swap.second_score, message: `The wheel lands on Score Swap! The random draw pairs ${swap.first_name} with ${swap.second_name}. ${swap.first_name} now has ${swap.first_score} points, and ${swap.second_name} has ${swap.second_score}.` }
+    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), directed_user_id: null, host_message: markerMessage(WHEEL_RESULT_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+    if (error) throw error
+    return data || getPartyRecord(db, party.id)
+  }
+  const players = await getPartyPlayers(db, party.id)
+  const player = players.find(item => item.user_id === state.payload.target_user_id)
+  if (!player) return party
+  const delta = Number(state.payload.outcome || 0)
+  const before = Number(player.score || 0)
+  const after = Math.max(0, before + delta)
+  const applied = after - before
+  const { error: scoreError } = await db.from('rival_study_party_players').update({ score: after }).eq('party_id', party.id).eq('user_id', player.user_id)
+  if (scoreError) throw scoreError
+  const resultText = applied >= 0 ? `wins ${applied} points` : `loses ${Math.abs(applied)} points`
+  const payload = { ...state.payload, delta: applied, score: after, message: `The wheel stops! ${state.payload.target_name} ${resultText} and now has ${after} points.` }
+  const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), directed_user_id: null, host_message: markerMessage(WHEEL_RESULT_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return data || getPartyRecord(db, party.id)
 }
 
 async function submitAnswer(db, userId, input) {
@@ -817,14 +954,16 @@ async function submitAnswer(db, userId, input) {
     topic_stats: nextTopicStats(player.topic_stats, question.topic || party.topic || party.subject, correct),
   }).eq('party_id', party.id).eq('user_id', userId)
   if (playerError) throw playerError
-  const swapResult = correct && question.swap_round ? await applyScoreSwap(db, party, userId, question.correct_answer) : null
   const profiles = await getProfiles(db, [userId])
   const name = playerName(profiles.get(userId))
   let updatedParty
   if (buzzerRequired && correct) {
+    if (question.swap_round) {
+      updatedParty = await applyAutomaticScoreSwap(db, party, userId, question.correct_answer)
+      return { party: await serializeParty(db, updatedParty, userId), result: { correct, points, streak: nextStreak } }
+    }
     const streakCopy = nextStreak >= 3 ? ` ${name} has a ${nextStreak}-answer streak!` : ''
-    const hostMessage = swapResult ? markerMessage(SWAP_RESULT_PREFIX, swapResult) : `${name} is correct for ${points} points!${streakCopy}`
-    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: hostMessage }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
+    const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `${name} is correct for ${points} points!${streakCopy}` }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
     if (error) throw error
     updatedParty = data
   } else if (buzzerRequired) {
@@ -865,6 +1004,7 @@ export default async function handler(request, response) {
     if (action === 'start_countdown') return response.status(200).json(await startQuestionCountdown(db, user.id, input))
     if (action === 'open_question') return response.status(200).json(await openQuestion(db, user.id, input))
     if (action === 'double_or_nothing') return response.status(200).json(await respondDoubleOrNothing(db, user.id, input))
+    if (action === 'spin_wheel') return response.status(200).json(await spinComebackWheel(db, user.id, input))
     if (action === 'buzz') return response.status(200).json(await buzz(db, user.id, input))
     if (action === 'answer') return response.status(200).json(await submitAnswer(db, user.id, input))
     if (action === 'quit') return response.status(200).json(await quitParty(db, user.id, input))

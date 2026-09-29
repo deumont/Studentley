@@ -5,7 +5,7 @@ import { Button, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../comp
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { getPersonalAIAudio } from '../services/ai'
-import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
+import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
 const roomSizes = [2, 3, 4, 5, 6, 7, 8]
@@ -209,9 +209,9 @@ export function StudyPartyRoom() {
 
   useEffect(() => {
     if (!party || party.status !== 'active' || !party.question) return
-    const spokenLine = party.phase === 'reveal' || party.phase === 'double_reveal'
+    const spokenLine = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
       ? party.reveal_announcement
-      : ['intermission', 'double_offer'].includes(party.phase)
+      : ['intermission', 'double_offer', 'wheel_offer'].includes(party.phase)
         ? party.host_message
         : ''
     const key = party.phase === 'intro'
@@ -292,6 +292,13 @@ export function StudyPartyRoom() {
     catch (problem) { setError(problem.message); await load() }
     finally { setPendingAction(''); setWorking(false) }
   }
+  const spinWheel = async () => {
+    if (pendingAction) return
+    setPendingAction('wheel'); setWorking(true); setError(''); syncEpochRef.current += 1
+    try { setParty((await spinStudyPartyWheel(party.id)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
   const quit = async () => {
     setQuitting(true); setError('')
     try {
@@ -309,8 +316,9 @@ export function StudyPartyRoom() {
 
   if (party.status === 'completed') return <StudyPartyResults party={party} onExit={() => navigate('/rivals')} />
 
-  const hostMessage = ['reveal', 'double_reveal'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
+  const hostMessage = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
   const doublePhase = party.phase.startsWith('double_')
+  const wheelPhase = party.phase.startsWith('wheel_')
 
   return <>
   <section className="study-party-live">
@@ -320,7 +328,7 @@ export function StudyPartyRoom() {
     {error && <ErrorState text={error} />}
     <div className="study-party-stage">
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
-        {party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
+        {wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
           <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Winner swaps scores</b> : party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
           <small>{party.question?.difficulty} · {party.question?.topic} · {party.question?.points}{party.question?.is_final ? ' × 2' : ''} pts</small>
@@ -345,7 +353,29 @@ function PersonalQuestionResult({ result }) {
 }
 
 function SwapResult({ result }) {
-  return <div className="study-party-swap-result"><Coins /><div><small>Score Swap complete</small><b>{result.winner_name} ↔ {result.opponent_name}</b><p>{result.winner_name}: {result.winner_score} points · {result.opponent_name}: {result.opponent_score} points</p></div></div>
+  if (result.skipped) return <div className="study-party-swap-result skipped"><Crown /><div><small>No swap needed</small><b>{result.winner_name} stays on top</b><p>{result.winner_name} already has the highest score with {result.winner_score} points.</p></div></div>
+  return <div className="study-party-swap-result"><Coins /><div><small>Random Score Swap complete</small><b>{result.winner_name} ↔ {result.opponent_name}</b><p>{result.winner_name}: {result.winner_score} points · {result.opponent_name}: {result.opponent_score} points</p></div></div>
+}
+
+function ComebackWheel({ party, onSpin, working, pendingAction, seconds }) {
+  const event = party.wheel_event || {}
+  const spinning = party.phase === 'wheel_spinning'
+  const result = party.phase === 'wheel_result'
+  const swapped = result && event.outcome === 'swap'
+  const resultLabel = swapped ? 'SCORE SWAP' : Number(event.delta || 0) >= 0 ? `+${Number(event.delta || 0)}` : `${Number(event.delta || 0)}`
+  return <div className={`study-party-wheel-stage ${spinning ? 'spinning' : ''} ${result ? 'result' : ''}`}>
+    <span className="study-party-wheel-kicker"><Sparkles /> Mid-game comeback</span>
+    <h1>{result ? 'The wheel has spoken!' : spinning ? 'Round and round…' : `${event.target_name || 'The last-place player'}, spin the wheel!`}</h1>
+    <div className="study-party-wheel-wrap" aria-label={spinning ? 'Comeback Wheel spinning' : 'Comeback Wheel'}>
+      <i />
+      <div className="study-party-wheel"><span>+50</span><span>+100</span><span>+200</span><span>+300</span><span>+400</span><span>−50</span><span>SWAP</span><b>{result ? resultLabel : <Coins />}</b></div>
+    </div>
+    {party.phase === 'wheel_offer' && (event.is_target
+      ? <><p>You are currently in last place. One spin can turn the whole show around.</p><Button className="rivals-primary study-party-wheel-button" loading={working && pendingAction === 'wheel'} onClick={onSpin}><Sparkles /> Spin the Comeback Wheel</Button><small>{seconds}s to spin · it spins automatically if time runs out</small></>
+      : <div className="study-party-wheel-wait"><LoaderCircle className="spin" /> Waiting for {event.target_name || 'the selected player'} to spin…</div>)}
+    {spinning && <p className="study-party-wheel-spin-copy"><LoaderCircle className="spin" /> The result is being decided…</p>}
+    {result && <div className={`study-party-wheel-result ${swapped ? 'swap' : Number(event.delta || 0) < 0 ? 'loss' : 'win'}`}><PartyPopper /><div><small>{swapped ? 'Random score swap' : 'Wheel result'}</small><b>{swapped ? `${event.target_name} ↔ ${event.opponent_name}` : `${event.target_name} ${Number(event.delta || 0) >= 0 ? 'wins' : 'loses'} ${Math.abs(Number(event.delta || 0))} points`}</b><p>{swapped ? `${event.target_name}: ${event.target_score} · ${event.opponent_name}: ${event.opponent_score}` : `${event.target_name} now has ${event.score} points.`}</p></div></div>}
+  </div>
 }
 
 function DoubleOffer({ party, onRespond, working, pendingAction, seconds }) {
