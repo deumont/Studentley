@@ -2,8 +2,37 @@ import Stripe from 'stripe'
 import { createClient } from '@supabase/supabase-js'
 
 export function stripeClient() {
-  if (!process.env.STRIPE_SECRET_KEY) throw Object.assign(new Error('Stripe is not configured.'), { status: 503 })
-  return new Stripe(process.env.STRIPE_SECRET_KEY, { apiVersion: '2025-03-31.basil' })
+  const key = process.env.STRIPE_SECRET_KEY?.trim()
+  if (!key) throw Object.assign(new Error('Stripe is not configured.'), { status: 503 })
+  if (process.env.VERCEL_ENV === 'production' && !/^(sk|rk)_live_/.test(key)) {
+    throw Object.assign(new Error('Production checkout requires a live Stripe secret key.'), { status: 503 })
+  }
+  return new Stripe(key, { apiVersion: '2025-03-31.basil' })
+}
+
+export const stripeKeyIsLive = () => /^(sk|rk)_live_/.test(process.env.STRIPE_SECRET_KEY?.trim() || '')
+
+export function priceIdForPlan(plan) {
+  if (plan === 'plus') return process.env.STRIPE_PLUS_PRICE_ID?.trim() || null
+  if (plan === 'pro') return process.env.STRIPE_PRO_PRICE_ID?.trim() || null
+  return null
+}
+
+export async function checkoutPrice(stripe, plan) {
+  const priceId = priceIdForPlan(plan)
+  if (!priceId) throw Object.assign(new Error(`The ${plan === 'pro' ? 'Pro' : 'Plus'} live price is not configured.`), { status: 503 })
+  const price = await stripe.prices.retrieve(priceId)
+  const expectedAmount = plan === 'plus' ? 399 : 699
+  if (!price.active || price.type !== 'recurring' || price.recurring?.interval !== 'month') {
+    throw Object.assign(new Error(`The ${plan === 'pro' ? 'Pro' : 'Plus'} Stripe price must be an active monthly recurring price.`), { status: 503 })
+  }
+  if (price.currency !== 'eur' || Number(price.unit_amount) !== expectedAmount) {
+    throw Object.assign(new Error(`The ${plan === 'pro' ? 'Pro' : 'Plus'} Stripe price does not match the advertised €${(expectedAmount / 100).toFixed(2)} monthly price.`), { status: 503 })
+  }
+  if (price.livemode !== stripeKeyIsLive()) {
+    throw Object.assign(new Error('The Stripe key and price are from different modes.'), { status: 503 })
+  }
+  return price
 }
 
 export function adminClient() {
@@ -21,8 +50,8 @@ export function appOrigin(request) {
 }
 
 export function planForPrice(priceId) {
-  if (priceId === process.env.STRIPE_PLUS_PRICE_ID) return 'plus'
-  if (priceId === process.env.STRIPE_PRO_PRICE_ID) return 'pro'
+  if (priceId === priceIdForPlan('plus')) return 'plus'
+  if (priceId === priceIdForPlan('pro')) return 'pro'
   return null
 }
 
@@ -45,10 +74,12 @@ export async function saveSubscription(admin, subscription, userId, explicitPlan
   const { data: existing, error: existingError } = await admin.from('subscriptions').select('*').eq('user_id', userId).maybeSingle()
   if (existingError) throw existingError
   const eventTime = new Date(eventCreated * 1000)
-  if (existing?.last_stripe_event_at && new Date(existing.last_stripe_event_at) > eventTime) return existing
+  if (existing?.stripe_subscription_id === subscription.id && existing?.last_stripe_event_at && new Date(existing.last_stripe_event_at) > eventTime) return existing
   const item = subscription.items?.data?.[0]
   const priceId = item?.price?.id || null
-  const plan = explicitPlan || planForPrice(priceId) || existing?.plan || 'free'
+  const configuredPlan = planForPrice(priceId)
+  if (explicitPlan && configuredPlan && explicitPlan !== configuredPlan) throw new Error('Stripe returned a price for the wrong Studentley plan.')
+  const plan = configuredPlan || explicitPlan || existing?.plan || 'free'
   const active = ['active', 'trialing'].includes(subscription.status)
   const periodEnd = subscription.current_period_end || item?.current_period_end
   const record = {
@@ -71,11 +102,17 @@ export async function saveSubscription(admin, subscription, userId, explicitPlan
 }
 
 export async function portalConfiguration(stripe, origin) {
-  if (process.env.STRIPE_PORTAL_CONFIGURATION_ID) return process.env.STRIPE_PORTAL_CONFIGURATION_ID
+  const configuredId = process.env.STRIPE_PORTAL_CONFIGURATION_ID?.trim()
+  if (configuredId) {
+    try {
+      const configured = await stripe.billingPortal.configurations.retrieve(configuredId)
+      if (configured.active) return configured.id
+    } catch (error) { if (error.code !== 'resource_missing') throw error }
+  }
   const configurations = await stripe.billingPortal.configurations.list({ active: true, limit: 100 })
   const existing = configurations.data.find(item => item.business_profile?.headline === 'Manage your Studentley subscription')
-  const plus = await stripe.prices.retrieve(process.env.STRIPE_PLUS_PRICE_ID)
-  const pro = await stripe.prices.retrieve(process.env.STRIPE_PRO_PRICE_ID)
+  const plus = await checkoutPrice(stripe, 'plus')
+  const pro = await checkoutPrice(stripe, 'pro')
   const products = [plus, pro].reduce((items, price) => {
     const product = typeof price.product === 'string' ? price.product : price.product.id
     const existingProduct = items.find(item => item.product === product)

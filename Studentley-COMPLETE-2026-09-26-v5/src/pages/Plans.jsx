@@ -50,21 +50,24 @@ export default function Plans() {
   }
   const choose = async plan => {
     if (!session) return navigate('/signup')
-    if (current !== 'free' || hasManagedSubscription) return manageBilling()
-    if (plan === 'free' || plan === current) return
+    if (plan === 'free') return hasManagedSubscription ? manageBilling() : undefined
+    if (plan === current && !hasManagedSubscription) return
     setLoading(plan)
     try {
       const response = await fetch('/api/stripe/checkout', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${session.access_token}` }, body: JSON.stringify({ plan }) })
       const result = await response.json()
-      if (!response.ok) throw new Error(result.error)
+      if (!response.ok) {
+        if (result.code === 'ACTIVE_SUBSCRIPTION') return manageBilling()
+        throw new Error(result.error)
+      }
       location.assign(result.url)
     } catch (error) { notify(error.message || 'Checkout is not configured yet.', 'error') }
     finally { setLoading(null) }
   }
   const buttonText = plan => {
     if (!session) return plan.id === 'free' ? 'Start free' : `Choose ${plan.name}`
-    if (current !== 'free' || hasManagedSubscription) return plan.id === current ? 'Manage billing' : plan.id === 'free' ? 'Manage or cancel plan' : `Switch to ${plan.name}`
-    return plan.id === 'free' ? 'Current plan' : `Choose ${plan.name}`
+    if (hasManagedSubscription) return plan.id === current ? 'Manage billing' : plan.id === 'free' ? 'Manage or cancel plan' : `Switch to ${plan.name}`
+    return plan.id === current ? 'Current plan' : plan.id === 'free' ? 'Included free plan' : `Choose ${plan.name}`
   }
   return <PublicLayout><main className="public-plans"><section className="plans-hero public-container"><span className="public-pill"><Crown /> Simple, transparent plans</span><h1>Choose the space you need to study your way.</h1><p>Start free. Upgrade when you need more uploads, practice and personalization.</p></section><section className="public-container"><div className="plans-grid public-pricing">{plans.map(plan => { const Icon = plan.icon; return <article className={`pricing-card ${plan.id} ${plan.popular ? 'popular' : ''}`} key={plan.id}>{plan.popular && <span className="popular-badge">Most popular</span>}<span className="plan-icon"><Icon /></span><h2>{plan.name}</h2><p>{plan.text}</p><h3>{plan.price}<small>{plan.id === 'free' ? '' : '/month'}</small></h3><Button className="full" variant={plan.id === 'pro' ? 'violet' : 'primary'} disabled={Boolean(session) && current === 'free' && !hasManagedSubscription && plan.id === 'free'} loading={loading === plan.id || (loading === 'billing' && (current !== 'free' || hasManagedSubscription))} onClick={() => choose(plan.id)}>{buttonText(plan)}</Button><ul>{plan.features.map(feature => <li key={feature}><Check /><span>{feature}</span></li>)}</ul><div className="plan-note"><ShieldCheck /> {plan.note}</div></article>})}</div><div className="pricing-honesty"><Sparkles /><div><b>Secure billing, clear limits.</b><p>Stripe handles checkout, invoices, payment methods, plan changes, and cancellation. AI requests are authenticated and processed through the secure server endpoint.</p></div></div></section></main></PublicLayout>
 }
