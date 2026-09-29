@@ -5,7 +5,7 @@ import { Button, ErrorState, Field, Loader, ProfileAvatar } from '../components/
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { getPersonalAIAudio } from '../services/ai'
-import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, startStudyParty } from '../services/studyParty'
+import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
 const roomSizes = [2, 3, 4, 5, 6, 7, 8]
@@ -92,6 +92,7 @@ export function StudyPartyRoom() {
   const navigate = useNavigate()
   const [party, setParty] = useState(null), [loading, setLoading] = useState(true), [working, setWorking] = useState(false), [error, setError] = useState('')
   const [answer, setAnswer] = useState(''), [now, setNow] = useState(Date.now()), [copied, setCopied] = useState('')
+  const [pendingAction, setPendingAction] = useState('')
   const [voiceEnabled, setVoiceEnabled] = useState(true), [voiceReady, setVoiceReady] = useState(false), [voiceStatus, setVoiceStatus] = useState('')
   const audioContextRef = useRef(null), audioSourceRef = useRef(null), speechRequestRef = useRef(null), spokenRef = useRef(new Set())
 
@@ -102,7 +103,12 @@ export function StudyPartyRoom() {
   }, [id])
 
   useEffect(() => { document.title = 'Live Quizz Show — Studentley'; load() }, [load])
-  useEffect(() => { if (!party || party.status === 'completed') return; const timer = setInterval(load, party.status === 'active' ? 1000 : 1800); return () => clearInterval(timer) }, [party?.status, load])
+  useEffect(() => {
+    if (!party || party.status === 'completed') return
+    const fastPhase = party.phase === 'intro' || party.phase === 'countdown'
+    const timer = setInterval(load, fastPhase ? 300 : party.status === 'active' ? 650 : 1800)
+    return () => clearInterval(timer)
+  }, [party?.phase, party?.status, load])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(timer) }, [])
   useEffect(() => { setAnswer('') }, [party?.current_question, party?.phase, party?.buzzed_by])
 
@@ -177,15 +183,28 @@ export function StudyPartyRoom() {
       }
       const directed = party.players.find(player => player.user_id === party.directed_user_id)
       const target = directed ? `This one is for ${directed.display_name}. ` : ''
-      const spoken = await speakHostLine(`${target}${party.question.prompt}. Three. Two. One.`)
+      const spoken = await speakHostLine(`${target}${party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
       if (party.is_host) {
-        try { setParty((await openStudyPartyQuestion(party.id)).party) }
+        try { setParty((await startStudyPartyCountdown(party.id)).party) }
         catch (problem) { if (!/answers/i.test(problem.message)) setError(problem.message); await load() }
       }
     }
     run()
   }, [load, party?.current_question, party?.directed_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.status, speakHostLine])
+
+  useEffect(() => {
+    if (party?.phase !== 'countdown') return
+    stopHostVoice()
+    setVoiceStatus('')
+    if (!party.is_host || !party.phase_deadline) return
+    const wait = Math.max(0, new Date(party.phase_deadline).getTime() - Date.now()) + 40
+    const timer = setTimeout(async () => {
+      try { setParty((await openStudyPartyQuestion(party.id)).party) }
+      catch { await load() }
+    }, wait)
+    return () => clearTimeout(timer)
+  }, [load, party?.id, party?.is_host, party?.phase, party?.phase_deadline, stopHostVoice])
 
   useEffect(() => () => { stopHostVoice(); audioContextRef.current?.close?.() }, [stopHostVoice])
 
@@ -197,11 +216,26 @@ export function StudyPartyRoom() {
   const directedPlayer = party.players.find(player => player.user_id === party.directed_user_id)
   const remaining = party.phase_deadline ? Math.max(0, new Date(party.phase_deadline).getTime() - now) : 0
   const seconds = formatSeconds(remaining)
+  const countdownNumber = Math.max(1, Math.min(3, Math.ceil(remaining / 1000)))
 
   const copyValue = async (value, kind) => { try { await navigator.clipboard.writeText(value); setCopied(kind); setTimeout(() => setCopied(''), 1800) } catch { setError('Copying is blocked by this browser.') } }
   const start = async () => { setWorking(true); setError(''); try { if (voiceEnabled) await armHostVoice(); setParty((await startStudyParty(party.id)).party) } catch (problem) { setError(problem.message) } finally { setWorking(false) } }
-  const buzz = async () => { setWorking(true); setError(''); try { setParty((await buzzStudyParty(party.id)).party) } catch (problem) { setError(problem.message); await load() } finally { setWorking(false) } }
-  const submit = async event => { event.preventDefault(); if (!answer) return; setWorking(true); setError(''); try { setParty((await answerStudyParty(party.id, answer)).party) } catch (problem) { setError(problem.message); await load() } finally { setWorking(false) } }
+  const buzz = async () => {
+    if (pendingAction) return
+    setPendingAction('buzz'); setWorking(true); setError('')
+    try { setParty((await buzzStudyParty(party.id)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
+  const submit = async event => {
+    event.preventDefault()
+    if (!answer || pendingAction) return
+    const lockedAnswer = answer
+    setPendingAction('answer'); setWorking(true); setError('')
+    try { setParty((await answerStudyParty(party.id, lockedAnswer)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
 
   if (party.status === 'waiting') {
     const invite = `${window.location.origin}/rivals/party?join=${party.room_code}`
@@ -217,13 +251,13 @@ export function StudyPartyRoom() {
     {error && <ErrorState text={error} />}
     <div className="study-party-stage">
       <main className={`card study-party-question ${party.phase}`}>
-        {party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Next round</span><h1>{roundNames[party.question?.round_type]}</h1><p>{party.question?.difficulty} difficulty · get ready</p></div> : <>
+        {party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : party.phase === 'countdown' ? <div className="study-party-countdown" aria-live="assertive"><span>Get ready</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : <>
           <div className="study-party-question-top"><span><Radio /> {roundNames[party.question?.round_type]}</span>{party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
           {directedPlayer && (party.phase === 'question' || party.phase === 'intro') && <div className="study-party-directed"><Target /> This question starts with <b>{directedPlayer.display_name}</b></div>}
           <small>{party.question?.difficulty} · {party.question?.topic} · {party.question?.points}{party.question?.is_final ? ' × 2' : ''} pts</small>
           <h1>{party.question?.prompt}</h1>
-          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area appears after “3, 2, 1”.</span></div> : party.phase === 'reveal' ? <div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} />}
+          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
         </>}
       </main>
       <PartyScoreboard party={party} />
@@ -231,11 +265,13 @@ export function StudyPartyRoom() {
   </section>
 }
 
-function StudyPartyAnswer({ party, me, buzzerPlayer, answer, setAnswer, onBuzz, onSubmit, working }) {
+function StudyPartyAnswer({ party, me, buzzerPlayer, answer, setAnswer, onBuzz, onSubmit, working, pendingAction }) {
   const question = party.question
   if (!question || party.phase !== 'question') return null
   const attempted = party.attempted_user_ids.includes(me?.user_id)
   const directedElsewhere = party.directed_user_id && !party.attempted_user_ids.length && party.directed_user_id !== me?.user_id
+  if (pendingAction === 'buzz') return <div className="study-party-answer-locked pending"><BellRing /><b>Buzzer pressed!</b><small>Claiming your answer now…</small></div>
+  if (pendingAction === 'answer') return <div className="study-party-answer-locked pending"><Check /><b>Answer locked!</b><small>Updating the scoreboard…</small></div>
   if (me?.has_answered || attempted) return <div className="study-party-answer-locked"><Check /> Your answer is locked. Watch the live scoreboard.</div>
   if (question.requires_buzzer && !party.buzzed_by) return <button className="study-party-buzzer" disabled={working || directedElsewhere} onClick={onBuzz}><span><BellRing /></span><b>{directedElsewhere ? 'Waiting for the selected player' : 'BUZZ'}</b><small>{directedElsewhere ? 'You can steal if they miss it' : 'First tap gets the first answer'}</small></button>
   if (question.requires_buzzer && party.buzzed_by !== me?.user_id) return <div className="study-party-buzzed"><BellRing /><b>{buzzerPlayer?.display_name || 'Another player'} buzzed first</b><small>Get ready to steal if the answer is wrong.</small></div>
