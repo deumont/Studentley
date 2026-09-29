@@ -9,6 +9,7 @@ const DIFFICULTIES = ['Accessible', 'Standard', 'Challenging']
 const REVEAL_MS = 4500
 const INTERMISSION_MS = 8500
 const INTRO_FAILSAFE_MS = 30000
+const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 
 function serviceClient() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase server settings are missing.'), { status: 503 })
@@ -21,6 +22,9 @@ const roomCode = () => Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ
 const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
 const roundName = value => ({ buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice', quick_answer: 'One Word', explain_it: 'One Word', rapid_fire: 'Rapid Fire', true_false: 'True / False', team_round: 'Team Round' }[value] || 'Quizz Show')
 const normalize = value => String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
+const isQuestionIntro = party => party.phase === 'intermission' && String(party.host_message || '').startsWith(QUESTION_INTRO_PREFIX)
+const questionIntroMessage = message => `${QUESTION_INTRO_PREFIX}${message}`
+const publicHostMessage = party => isQuestionIntro(party) ? String(party.host_message).slice(QUESTION_INTRO_PREFIX.length) : party.host_message
 
 async function getPartyRecord(db, identifier) {
   const query = db.from('rival_study_parties').select('*')
@@ -109,6 +113,7 @@ async function serializeParty(db, party, userId) {
   })
   const questions = Array.isArray(party.questions) ? party.questions : []
   const question = Number.isInteger(party.current_question) ? questions[party.current_question] : null
+  const questionIntro = isQuestionIntro(party)
   const reveal = party.phase === 'reveal' || party.status === 'completed'
   const teamScores = party.game_mode === 'teams' ? ['A', 'B'].map(team => ({ team, score: publicPlayers.filter(player => player.team === team).reduce((sum, player) => sum + Number(player.score || 0), 0) })) : []
   return {
@@ -122,7 +127,7 @@ async function serializeParty(db, party, userId) {
     difficulty: party.difficulty,
     game_mode: party.game_mode,
     status: party.status,
-    phase: party.phase,
+    phase: questionIntro ? 'intro' : party.phase,
     max_players: party.max_players,
     question_count: party.question_count,
     question_number: party.used_question_indexes?.length || 0,
@@ -132,7 +137,7 @@ async function serializeParty(db, party, userId) {
     buzzed_by: party.buzzed_by,
     attempted_user_ids: party.attempted_user_ids || [],
     phase_deadline: party.phase_deadline,
-    host_message: party.host_message,
+    host_message: publicHostMessage(party),
     winner_user_id: party.winner_user_id,
     winner_team: party.winner_team,
     started_at: party.started_at,
@@ -332,10 +337,10 @@ async function startParty(db, userId, input) {
   const directedName = directedUserId ? playerName(profiles.get(directedUserId)) : ''
   const now = new Date()
   const { data, error } = await db.from('rival_study_parties').update({
-    status: 'active', phase: 'intro', started_at: now.toISOString(), current_question: next.index,
+    status: 'active', phase: 'intermission', started_at: now.toISOString(), current_question: next.index,
     used_question_indexes: [next.index], directed_user_id: directedUserId, buzzed_by: null, buzzed_at: null,
     attempted_user_ids: [], phase_deadline: new Date(now.getTime() + INTRO_FAILSAFE_MS).toISOString(),
-    host_message: roundIntro(next.question, directedName),
+    host_message: questionIntroMessage(roundIntro(next.question, directedName)),
   }).eq('id', party.id).eq('status', 'waiting').select().maybeSingle()
   if (error) throw error
   if (!data) throw Object.assign(new Error('The Quizz Show has already started.'), { status: 409 })
@@ -345,14 +350,14 @@ async function startParty(db, userId, input) {
 async function openQuestion(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can reveal the answers.'), { status: 403 })
-  if (party.status !== 'active' || party.phase !== 'intro') return { party: await serializeParty(db, party, userId) }
+  if (party.status !== 'active' || !isQuestionIntro(party)) return { party: await serializeParty(db, party, userId) }
   const question = party.questions?.[party.current_question]
   if (!question) throw Object.assign(new Error('The next question is missing.'), { status: 409 })
   const { data, error } = await db.from('rival_study_parties').update({
     phase: 'question',
     phase_deadline: new Date(Date.now() + Number(question.time_limit || 20) * 1000).toISOString(),
     host_message: 'Answers are open!',
-  }).eq('id', party.id).eq('phase', 'intro').select().maybeSingle()
+  }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
   if (error) throw error
   return { party: await serializeParty(db, data || await getPartyRecord(db, party.id), userId) }
 }
@@ -423,13 +428,11 @@ async function advanceParty(db, party) {
     if (error) throw error
     return data || getPartyRecord(db, party.id)
   }
-  if (party.phase === 'intro' && current) {
-    const { data, error } = await db.from('rival_study_parties').update({ phase: 'question', phase_deadline: new Date(Date.now() + Number(current.time_limit || 20) * 1000).toISOString(), host_message: 'Answers are open!' }).eq('id', party.id).eq('phase', 'intro').select().maybeSingle()
-    if (error) throw error
-    return data || getPartyRecord(db, party.id)
-  }
   if (party.phase === 'intermission' && current) {
-    const { data, error } = await db.from('rival_study_parties').update({ phase: 'intro', phase_deadline: new Date(Date.now() + INTRO_FAILSAFE_MS).toISOString(), host_message: roundIntro(current) }).eq('id', party.id).eq('phase', 'intermission').select().maybeSingle()
+    const changes = isQuestionIntro(party)
+      ? { phase: 'question', phase_deadline: new Date(Date.now() + Number(current.time_limit || 20) * 1000).toISOString(), host_message: 'Answers are open!' }
+      : { phase: 'intermission', phase_deadline: new Date(Date.now() + INTRO_FAILSAFE_MS).toISOString(), host_message: questionIntroMessage(roundIntro(current)) }
+    const { data, error } = await db.from('rival_study_parties').update(changes).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
     if (error) throw error
     return data || getPartyRecord(db, party.id)
   }

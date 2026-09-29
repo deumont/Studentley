@@ -21,7 +21,7 @@ create table if not exists public.rival_study_parties (
   difficulty text not null default 'Adaptive',
   game_mode text not null default 'free_for_all' check (game_mode in ('free_for_all','teams')),
   status text not null default 'waiting' check (status in ('waiting','active','completed','cancelled')),
-  phase text not null default 'waiting' check (phase in ('waiting','intermission','intro','question','reveal','completed')),
+  phase text not null default 'waiting' check (phase in ('waiting','intermission','question','reveal','completed')),
   max_players integer not null default 8 check (max_players between 2 and 8),
   question_count integer not null default 12 check (question_count between 6 and 24),
   questions jsonb not null default '[]'::jsonb,

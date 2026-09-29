@@ -13,7 +13,7 @@ const roundNames = { buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice',
 const formatSeconds = milliseconds => Math.max(0, Math.ceil(milliseconds / 1000))
 
 function SetupRequired({ error }) {
-  return <section className="rivals-setup card"><LockKeyhole /><span><b>Quizz Show database setup required</b><p>{error}</p><code>Run 202609290001_ai_hosted_study_parties.sql, then 202609290002_quizz_show_intro_phase.sql</code></span></section>
+  return <section className="rivals-setup card"><LockKeyhole /><span><b>Quizz Show database setup required</b><p>{error}</p><code>202609290001_ai_hosted_study_parties.sql</code></span></section>
 }
 
 export default function StudyPartyHome() {
