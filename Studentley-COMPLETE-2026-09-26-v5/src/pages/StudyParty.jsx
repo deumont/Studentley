@@ -1,11 +1,11 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { ArrowRight, BellRing, BookOpenCheck, BrainCircuit, Check, Clock3, Copy, Crown, Flame, Gauge, Link2, LoaderCircle, LockKeyhole, PartyPopper, Radio, Send, Sparkles, Target, Trophy, UploadCloud, UserPlus, Users, Volume2, VolumeX, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BellRing, BookOpenCheck, BrainCircuit, Check, Clock3, Coins, Copy, Crown, Flame, Gauge, Link2, LoaderCircle, LockKeyhole, PartyPopper, Radio, Send, Sparkles, Target, Trophy, UploadCloud, UserPlus, Users, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
-import { Button, ErrorState, Field, Loader, ProfileAvatar } from '../components/UI'
+import { Button, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../components/UI'
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { getPersonalAIAudio } from '../services/ai'
-import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
+import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
 const roomSizes = [2, 3, 4, 5, 6, 7, 8]
@@ -89,10 +89,12 @@ export default function StudyPartyHome() {
 
 export function StudyPartyRoom() {
   const { id } = useParams()
+  const { refresh } = useApp()
   const navigate = useNavigate()
   const [party, setParty] = useState(null), [loading, setLoading] = useState(true), [working, setWorking] = useState(false), [error, setError] = useState('')
   const [answer, setAnswer] = useState(''), [now, setNow] = useState(Date.now()), [copied, setCopied] = useState('')
   const [pendingAction, setPendingAction] = useState('')
+  const [showQuit, setShowQuit] = useState(false), [quitting, setQuitting] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(true), [voiceReady, setVoiceReady] = useState(false), [voiceStatus, setVoiceStatus] = useState('')
   const audioContextRef = useRef(null), audioSourceRef = useRef(null), speechRequestRef = useRef(null), spokenRef = useRef(new Set())
 
@@ -105,7 +107,7 @@ export function StudyPartyRoom() {
   useEffect(() => { document.title = 'Live Quizz Show — Studentley'; load() }, [load])
   useEffect(() => {
     if (!party || party.status === 'completed') return
-    const fastPhase = party.phase === 'intro' || party.phase === 'countdown'
+    const fastPhase = ['intro', 'countdown', 'double_offer', 'double_intro', 'double_countdown'].includes(party.phase)
     const timer = setInterval(load, fastPhase ? 300 : party.status === 'active' ? 650 : 1800)
     return () => clearInterval(timer)
   }, [party?.phase, party?.status, load])
@@ -145,7 +147,7 @@ export function StudyPartyRoom() {
     speechRequestRef.current = request
     try {
       setVoiceStatus('Studentley is speaking…')
-      const audioData = await getPersonalAIAudio(text, request.signal)
+      const audioData = await getPersonalAIAudio(text, request.signal, 'quiz_show')
       const audioBuffer = await context.decodeAudioData(audioData.slice(0))
       await new Promise((resolve, reject) => {
         const source = context.createBufferSource()
@@ -169,20 +171,31 @@ export function StudyPartyRoom() {
 
   useEffect(() => {
     if (!party || party.status !== 'active' || !party.question) return
+    const spokenLine = party.phase === 'reveal' || party.phase === 'double_reveal'
+      ? party.reveal_announcement
+      : ['intermission', 'double_offer'].includes(party.phase)
+        ? party.host_message
+        : ''
     const key = party.phase === 'intro'
       ? `question-${party.current_question}`
-      : party.phase === 'intermission'
-        ? `intermission-${party.current_question}-${party.host_message}`
-        : ''
+      : party.phase === 'double_intro'
+        ? `double-question-${party.current_question}`
+        : spokenLine
+          ? `${party.phase}-${party.current_question}-${spokenLine}`
+          : ''
     if (!key || spokenRef.current.has(key)) return
     spokenRef.current.add(key)
     const run = async () => {
-      if (party.phase === 'intermission') {
-        await speakHostLine(party.host_message)
+      if (spokenLine) {
+        await speakHostLine(spokenLine)
         return
       }
-      const directed = party.players.find(player => player.user_id === party.directed_user_id)
-      const target = directed ? `This one is for ${directed.display_name}. ` : ''
+      const directed = party.players.find(player => player.user_id === (party.double_or_nothing?.target_user_id || party.directed_user_id))
+      const target = party.phase === 'double_intro'
+        ? `${directed?.display_name || 'Player'}, this is Double or Nothing. `
+        : directed
+          ? `This one is for ${directed.display_name}. `
+          : ''
       const spoken = await speakHostLine(`${target}${party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
       if (party.is_host) {
@@ -191,10 +204,10 @@ export function StudyPartyRoom() {
       }
     }
     run()
-  }, [load, party?.current_question, party?.directed_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.status, speakHostLine])
+  }, [load, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.reveal_announcement, party?.status, speakHostLine])
 
   useEffect(() => {
-    if (party?.phase !== 'countdown') return
+    if (!['countdown', 'double_countdown'].includes(party?.phase)) return
     stopHostVoice()
     setVoiceStatus('')
     if (!party.is_host || !party.phase_deadline) return
@@ -236,6 +249,22 @@ export function StudyPartyRoom() {
     catch (problem) { setError(problem.message); await load() }
     finally { setPendingAction(''); setWorking(false) }
   }
+  const respondDouble = async accept => {
+    if (pendingAction) return
+    setPendingAction('double'); setWorking(true); setError('')
+    try { setParty((await respondStudyPartyDouble(party.id, accept)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
+  const quit = async () => {
+    setQuitting(true); setError('')
+    try {
+      await quitStudyParty(party.id)
+      await refresh()
+      navigate('/rivals')
+    } catch (problem) { setError(problem.message); setShowQuit(false) }
+    finally { setQuitting(false) }
+  }
 
   if (party.status === 'waiting') {
     const invite = `${window.location.origin}/rivals/party?join=${party.room_code}`
@@ -244,25 +273,60 @@ export function StudyPartyRoom() {
 
   if (party.status === 'completed') return <StudyPartyResults party={party} onExit={() => navigate('/rivals')} />
 
-  return <section className="study-party-live">
-    <header className="study-party-live-header"><button onClick={() => navigate('/rivals')}><ArrowRight /> Leave view</button><div><span className="study-party-live-dot" /> AI host live</div><span className="study-party-live-tools"><button type="button" onClick={async () => { if (voiceEnabled) { stopHostVoice(); setVoiceEnabled(false); setVoiceStatus('') } else { setVoiceEnabled(true); await armHostVoice() } }} title={voiceEnabled ? 'Mute host voice' : 'Enable host voice'}>{voiceEnabled ? <Volume2 /> : <VolumeX />}</button><b>{party.question_number}/{party.question_count}</b></span></header>
-    <div className="study-party-host-message" key={party.host_message}><BrainCircuit /><p>{party.host_message}</p></div>
+  const hostMessage = ['reveal', 'double_reveal'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
+  const doublePhase = party.phase.startsWith('double_')
+
+  return <>
+  <section className="study-party-live">
+    <header className="study-party-live-header"><button onClick={() => setShowQuit(true)}><ArrowRight /> Quit show</button><div><span className="study-party-live-dot" /> AI host live</div><span className="study-party-live-tools"><button type="button" onClick={async () => { if (voiceEnabled) { stopHostVoice(); setVoiceEnabled(false); setVoiceStatus('') } else { setVoiceEnabled(true); await armHostVoice() } }} title={voiceEnabled ? 'Mute host voice' : 'Enable host voice'}>{voiceEnabled ? <Volume2 /> : <VolumeX />}</button><b>{party.question_number}/{party.question_count}</b></span></header>
+    <div className={`study-party-host-message ${doublePhase ? 'double' : ''}`} key={hostMessage}><BrainCircuit /><p>{hostMessage}</p></div>
     {voiceStatus && <div className="study-party-voice-status live" role="status">{voiceStatus}</div>}
     {error && <ErrorState text={error} />}
     <div className="study-party-stage">
       <main className={`card study-party-question ${party.phase}`}>
-        {party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : party.phase === 'countdown' ? <div className="study-party-countdown" aria-live="assertive"><span>Get ready</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : <>
+        {party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
           <div className="study-party-question-top"><span><Radio /> {roundNames[party.question?.round_type]}</span>{party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
           {directedPlayer && (party.phase === 'question' || party.phase === 'intro') && <div className="study-party-directed"><Target /> This question starts with <b>{directedPlayer.display_name}</b></div>}
           <small>{party.question?.difficulty} · {party.question?.topic} · {party.question?.points}{party.question?.is_final ? ' × 2' : ''} pts</small>
           <h1>{party.question?.prompt}</h1>
-          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
+          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <><PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
         </>}
       </main>
       <PartyScoreboard party={party} />
     </div>
   </section>
+  {showQuit && <Modal title="Quit this Quizz Show?" description="This action cannot be undone." onClose={() => !quitting && setShowQuit(false)}><div className="study-party-quit-warning"><span><AlertTriangle /></span><div><b>Are you sure you want to quit?</b><p>You will lose 20 Studentley Points and leave the live room. If only one player remains, they win the show.</p></div></div><div className="study-party-modal-actions"><Button variant="ghost" disabled={quitting} onClick={() => setShowQuit(false)}>Keep playing</Button><Button className="study-party-quit-confirm" loading={quitting} onClick={quit}>Quit and lose 20 SP</Button></div></Modal>}
+  </>
+}
+
+function PersonalQuestionResult({ result }) {
+  if (!result) return null
+  const positive = result.correct && Number(result.points || 0) >= 0
+  const label = !result.answered ? 'No answer locked' : positive ? 'Correct!' : 'Not quite'
+  const points = Number(result.points || 0)
+  return <div className={`study-party-personal-result ${positive ? 'correct' : 'wrong'}`} role="status"><span>{positive ? <Check /> : <AlertTriangle />}</span><div><b>{label}</b><small>{points > 0 ? `+${points} points` : points < 0 ? `${points} points` : '0 points'}</small></div></div>
+}
+
+function DoubleOffer({ party, onRespond, working, pendingAction, seconds }) {
+  const offer = party.double_or_nothing
+  const target = offer?.target_name || party.players.find(player => player.user_id === offer?.target_user_id)?.display_name || 'Player'
+  return <div className="study-party-double-offer"><span className="study-party-double-crown"><Crown /></span><small>Special challenge · {seconds}s to choose</small><h1>Double or Nothing</h1><p><b>{target}</b> can risk the {offer?.wager || 0} points they just won. Get the follow-up right to double those points. Get it wrong and lose them.</p>{offer?.is_target ? <div className="study-party-double-actions"><Button variant="secondary" disabled={working} onClick={() => onRespond(false)}>Keep my points</Button><Button className="rivals-primary" loading={working && pendingAction === 'double'} onClick={() => onRespond(true)}><Coins /> Risk {offer.wager} points</Button></div> : <div className="study-party-double-wait"><LoaderCircle className="spin" /> Waiting for {target} to choose…</div>}</div>
+}
+
+function DoubleStage({ party, answer, setAnswer, onSubmit, working, pendingAction, seconds, remaining }) {
+  const offer = party.double_or_nothing
+  const isTarget = offer?.is_target
+  const listening = party.phase === 'double_intro'
+  const reveal = party.phase === 'double_reveal'
+  return <>
+    <div className="study-party-question-top"><span><Coins /> Double or Nothing</span><b><Crown /> {offer?.wager || 0} points at risk</b><time className={party.phase === 'double_question' && seconds <= 5 ? 'critical' : ''}>{listening ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
+    <div className={`study-party-timer ${listening ? 'listening' : ''}`}><span style={{ width: listening ? '100%' : `${Math.min(100, remaining / 25000 * 100)}%` }} /></div>
+    <div className="study-party-directed double"><Target /> Only <b>{offer?.target_name || 'the selected player'}</b> can answer</div>
+    <small>Follow-up challenge · double the reward or lose it</small>
+    <h1>{party.question?.prompt}</h1>
+    {listening ? <div className="study-party-listening double"><Volume2 /><b>Listen carefully…</b><span>The options appear after the dramatic countdown.</span></div> : reveal ? <><PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal double"><Coins /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : isTarget ? pendingAction === 'answer' ? <div className="study-party-answer-locked pending"><Check /><b>Answer locked!</b><small>Double or Nothing is being scored…</small></div> : <form className="study-party-answer" onSubmit={onSubmit}><div className="study-party-options">{party.question?.options?.map((option, index) => <button type="button" className={answer === option ? 'selected' : ''} onClick={() => setAnswer(option)} key={option}><b>{String.fromCharCode(65 + index)}</b><span>{option}</span></button>)}</div><Button className="rivals-primary full" loading={working} disabled={!answer}><Send /> Lock Double or Nothing answer</Button></form> : <div className="study-party-double-wait"><LoaderCircle className="spin" /> {offer?.target_name || 'The selected player'} is answering for Double or Nothing…</div>}
+  </>
 }
 
 function StudyPartyAnswer({ party, me, buzzerPlayer, answer, setAnswer, onBuzz, onSubmit, working, pendingAction }) {

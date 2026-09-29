@@ -13,6 +13,7 @@ export default async function handler(request, response) {
   try {
     await requireUser(request)
     const input = cleanForSpeech(request.body?.text).slice(0, 3000)
+    const quizShow = request.body?.style === 'quiz_show'
     if (!input) return response.status(400).json({ error: 'Enter text to read aloud.' })
     const key = process.env.OPENAI_API_KEY || process.env.iStudent_Key_OpenAi || process.env.ISTUDENT_KEY_OPENAI
     if (!key) return response.status(503).json({ error: 'The natural voice is not configured.' })
@@ -29,7 +30,9 @@ export default async function handler(request, response) {
           model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
           voice: process.env.OPENAI_TTS_VOICE || 'marin',
           input,
-          instructions: 'Speak like a warm, calm and encouraging personal tutor. Sound natural and conversational, with gentle expression, clear pronunciation and relaxed pacing. Avoid exaggerated enthusiasm and robotic pauses.',
+          instructions: quizShow
+            ? 'Speak like an energetic, warm and dramatic live quiz-show host for teenagers. Sound natural, playful and genuinely excited. Vary your rhythm and emphasis, use short dramatic pauses before important reveals, celebrate correct answers, and make double-or-nothing moments feel special. Keep every line clear and punchy, never robotic, shouty or overacted.'
+            : 'Speak like a warm, calm and encouraging personal tutor. Sound natural and conversational, with gentle expression, clear pronunciation and relaxed pacing. Avoid exaggerated enthusiasm and robotic pauses.',
           response_format: 'mp3',
         }),
       })
