@@ -5,7 +5,7 @@ import { Button, EmptyState, ErrorState, Field, Loader, Modal, ProfileAvatar } f
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { generateQuiz } from '../services/ai'
-import { addPracticeRival, cancelRivalMatch, createFriendRoom, createPublicRivalQuiz, forfeitRivalMatch, joinFriendRoom, loadPublicRivalQuizzes, loadRivalMatch, loadRivalTopics, loadRivalsDashboard, queueRankedBattle, startFriendRoom, submitPublicRivalQuiz, submitRivalMatch } from '../services/rivals'
+import { addPracticeRival, cancelRivalMatch, createFriendRoom, createPublicRivalQuiz, forfeitRivalMatch, getCachedRivalsDashboard, joinFriendRoom, loadPublicRivalQuizzes, loadRivalMatch, loadRivalTopics, loadRivalsDashboard, queueRankedBattle, startFriendRoom, submitPublicRivalQuiz, submitRivalMatch } from '../services/rivals'
 
 const tiers = [
   ['Bronze', 0, '#b87945'], ['Silver', 1000, '#8d9bae'], ['Gold', 1200, '#e0a91f'],
@@ -81,9 +81,10 @@ function MatchmakingPanel({ match, onCancel, error = '' }) {
 }
 
 export default function RivalsDashboard() {
-  const [data, setData] = useState(null), [loading, setLoading] = useState(true), [error, setError] = useState('')
-  const load = async () => { setLoading(true); setError(''); try { setData(await loadRivalsDashboard()) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
-  useEffect(() => { document.title = 'Rivals — Studentley'; load() }, [])
+  const { user } = useApp()
+  const [data, setData] = useState(() => getCachedRivalsDashboard(user?.id)), [loading, setLoading] = useState(true), [error, setError] = useState('')
+  const load = useCallback(async () => { setLoading(true); setError(''); try { setData(await loadRivalsDashboard()) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }, [])
+  useEffect(() => { document.title = 'Rivals — Studentley'; load() }, [load])
   if (loading && !data) return <Loader label="Loading Studentley Rivals…" />
   if (error && !data) return <SetupRequired error={error} />
   const profile = data?.profile || {}, played = Number(profile.total_battles || 0), wins = Number(profile.ranked_wins || 0) + Number(profile.friend_wins || 0)

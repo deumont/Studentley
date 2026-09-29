@@ -20,12 +20,15 @@ const practiceInitials = ['B.', 'C.', 'F.', 'H.', 'K.', 'L.', 'M.', 'R.', 'S.', 
 const randomBetween = (minimum, maximum) => Math.floor(minimum + Math.random() * (maximum - minimum + 1))
 
 async function ensureRivalProfile(db, userId) {
-  const { data, error } = await db.from('rival_profiles').upsert({ user_id: userId }, { onConflict: 'user_id', ignoreDuplicates: true }).select().limit(1)
-  if (error) throw error
-  if (data?.[0]) return data[0]
-  const { data: existing, error: readError } = await db.from('rival_profiles').select('*').eq('user_id', userId).limit(1)
+  const { data: existing, error: readError } = await db.from('rival_profiles').select('*').eq('user_id', userId).maybeSingle()
   if (readError) throw readError
-  if (existing?.[0]) return existing[0]
+  if (existing) return existing
+  const { data: inserted, error } = await db.from('rival_profiles').insert({ user_id: userId }).select().maybeSingle()
+  if (error && error.code !== '23505') throw error
+  if (inserted) return inserted
+  const { data: racedProfile, error: racedError } = await db.from('rival_profiles').select('*').eq('user_id', userId).maybeSingle()
+  if (racedError) throw racedError
+  if (racedProfile) return racedProfile
   throw Object.assign(new Error('Your Rivals profile could not be prepared. Please try matchmaking again.'), { status: 409 })
 }
 
@@ -225,13 +228,11 @@ async function advancePracticeRival(db, match) {
 async function serializeMatch(db, match, userId) {
   match = await advancePracticeRival(db, match)
   if (match.status === 'finishing' && match.finish_deadline && Date.now() > new Date(match.finish_deadline).getTime() + SUBMISSION_GRACE_MS) match = await finalizeMatch(db, match)
-  let players = await getPlayers(db, match.id)
+  let [players, bots] = await Promise.all([getPlayers(db, match.id), getPracticeRivals(db, match.id)])
   if (!players.some(player => player.user_id === userId)) throw Object.assign(new Error('You are not part of this battle.'), { status: 403 })
-  let bots = await getPracticeRivals(db, match.id)
   if (['active', 'finishing'].includes(match.status) && [...players, ...bots].every(player => player.submitted_at)) {
     match = await finalizeMatch(db, match)
-    players = await getPlayers(db, match.id)
-    bots = await getPracticeRivals(db, match.id)
+    ;[players, bots] = await Promise.all([getPlayers(db, match.id), getPracticeRivals(db, match.id)])
   }
   const profiles = await profileMap(db, players.map(player => player.user_id))
   const publicPlayers = [...players.map(player => publicPlayer(player, profiles.get(player.user_id), userId)), ...bots.map(publicPracticeRival)]
@@ -304,19 +305,26 @@ async function activeMatchForUser(db, userId) {
 }
 
 async function dashboard(db, userId) {
-  const profile = await ensureRivalProfile(db, userId)
-  const { data: memberships, error } = await db.from('rival_match_players').select('match_id').eq('user_id', userId).order('joined_at', { ascending: false }).limit(8)
+  const [profile, membershipResult, leaderResult] = await Promise.all([
+    ensureRivalProfile(db, userId),
+    db.from('rival_match_players').select('match_id').eq('user_id', userId).order('joined_at', { ascending: false }).limit(8),
+    db.from('rival_profiles').select('user_id,rating,ranked_wins,ranked_losses').order('rating', { ascending: false }).limit(20),
+  ])
+  const { data: memberships, error } = membershipResult
   if (error) throw error
-  const ids = (memberships || []).map(item => item.match_id)
-  const { data: matches, error: matchesError } = ids.length ? await db.from('rival_matches').select('*').in('id', ids).order('created_at', { ascending: false }) : { data: [], error: null }
-  if (matchesError) throw matchesError
-  const history = []
-  for (const match of matches || []) history.push(await serializeMatch(db, match, userId))
-  const { data: leaders, error: leaderError } = await db.from('rival_profiles').select('*').order('rating', { ascending: false }).limit(20)
+  const { data: leaders, error: leaderError } = leaderResult
   if (leaderError) throw leaderError
-  const { count: playersAbove, error: positionError } = await db.from('rival_profiles').select('user_id', { count: 'exact', head: true }).gt('rating', profile.rating)
+  const ids = (memberships || []).map(item => item.match_id)
+  const [matchResult, positionResult, profiles] = await Promise.all([
+    ids.length ? db.from('rival_matches').select('*').in('id', ids).order('created_at', { ascending: false }) : Promise.resolve({ data: [], error: null }),
+    db.from('rival_profiles').select('user_id', { count: 'exact', head: true }).gt('rating', profile.rating),
+    profileMap(db, (leaders || []).map(item => item.user_id)),
+  ])
+  const { data: matches, error: matchesError } = matchResult
+  if (matchesError) throw matchesError
+  const { count: playersAbove, error: positionError } = positionResult
   if (positionError) throw positionError
-  const profiles = await profileMap(db, (leaders || []).map(item => item.user_id))
+  const history = await Promise.all((matches || []).map(match => serializeMatch(db, match, userId)))
   const leaderboard = (leaders || []).map((item, index) => ({ position: index + 1, user_id: item.user_id, display_name: safeText(profiles.get(item.user_id)?.display_name || 'Student', 80).split(' ')[0], avatar_path: profiles.get(item.user_id)?.leaderboard_visible === false ? '' : profiles.get(item.user_id)?.avatar_path || '', avatar_bucket: profiles.get(item.user_id)?.avatar_bucket || 'avatars', rating: item.rating, rank: rankFor(item.rating), wins: item.ranked_wins, losses: item.ranked_losses, is_current_user: item.user_id === userId }))
   return { profile: { ...profile, rank: rankFor(profile.rating), position: Number(playersAbove || 0) + 1 }, history, active_match: history.find(item => ACTIVE_STATUSES.includes(item.status)) || null, leaderboard }
 }
