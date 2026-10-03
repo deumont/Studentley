@@ -25,7 +25,7 @@ export default function Home() {
     while (days.has(cursor.toDateString())) { count++; cursor.setDate(cursor.getDate() - 1) }
     return count
   }, [sessions, practiceResults])
-  if (loading && !data) return <Loader label="Loading your dashboard…" />
+  if (loading && !data) return <Loader variant="dashboard" label="Loading your dashboard…" />
   const name = profile?.display_name?.split(' ')[0] || 'there'
   const copy = {
     greeting: greeting(), ready: 'Your day is ready when you are.', shape: 'Let’s shape a focused day together.', tasks: 'Today’s tasks', due: 'due today', progress: 'Study progress', plan: 'plan a session', todayPlan: 'of today’s plan', streak: 'Study streak', day: 'day', days: 'days', complete: 'complete a session', schedule: 'Today’s schedule', viewPlan: 'View plan', nothing: 'Nothing planned today', addSession: 'Add a study session when you’re ready.', planSession: 'Plan a session', exams: 'Upcoming exams', viewAll: 'View all', noExams: 'No exams yet', addExamText: 'Add an exam manually or upload your exam schedule.', addExam: 'Add exam', quick: 'Quick actions', upload: 'Upload document', uploadSub: 'Notes, PDFs, images and more', visualGuide: 'Generate a visual guide', visualGuideSub: 'Explain a topic with pictures and graphs', personalAI: 'Ask your personal AI', personalAISub: 'Get help or add plans and deadlines', examSub: 'Track a real upcoming assessment', left: 'days left', today: 'Today', reopened: 'Study session reopened.', completed: 'Study session completed.'

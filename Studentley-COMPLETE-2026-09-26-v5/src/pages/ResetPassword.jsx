@@ -42,7 +42,7 @@ export default function ResetPassword() {
     finally { setLoading(false) }
   }
 
-  if (authLoading) return <main className="reset-page"><Loader full label="Checking your reset link…" /></main>
+  if (authLoading) return <main className="reset-page"><Loader full variant="reset" label="Checking your reset link…" /></main>
 
   return <main className="reset-page"><Link to="/" className="public-brand reset-brand"><span>S</span><b>Studentley</b></Link><section className="reset-card">
     {complete ? <div className="reset-complete"><span><CheckCircle2 /></span><small>Password updated</small><h1>Your new password is ready.</h1><p>Sign in again using the password you just created.</p><Link className="button full" to="/login">Continue to sign in</Link></div> : <>

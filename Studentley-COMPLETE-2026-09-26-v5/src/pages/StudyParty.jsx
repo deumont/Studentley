@@ -345,7 +345,7 @@ export function StudyPartyRoom() {
 
   useEffect(() => () => { stopHostVoice(); audioContextRef.current?.close?.() }, [stopHostVoice])
 
-  if (loading && !party) return <Loader label="Joining the Quizz Show…" />
+  if (loading && !party) return <Loader full variant="quiz-show" label="Joining the Quizz Show…" />
   if (error && !party) return <>{error.includes('migration') ? <SetupRequired error={error} /> : <ErrorState text={error} />}<Button variant="secondary" onClick={() => navigate('/rivals/party')}>Back to Quizz Show</Button></>
   if (!party) return null
   const me = party.players.find(player => player.is_current_user)

@@ -85,7 +85,7 @@ export default function RivalsDashboard() {
   const [data, setData] = useState(() => getCachedRivalsDashboard(user?.id)), [loading, setLoading] = useState(true), [error, setError] = useState('')
   const load = useCallback(async () => { setLoading(true); setError(''); try { setData(await loadRivalsDashboard()) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }, [])
   useEffect(() => { document.title = 'Rivals — Studentley'; load() }, [load])
-  if (loading && !data) return <Loader label="Loading Studentley Rivals…" />
+  if (loading && !data) return <Loader variant="rivals" label="Loading Studentley Rivals…" />
   if (error && !data) return <SetupRequired error={error} />
   const profile = data?.profile || {}, played = Number(profile.total_battles || 0), wins = Number(profile.ranked_wins || 0) + Number(profile.friend_wins || 0)
   return <>
@@ -111,7 +111,7 @@ export function RankedRivals() {
   useEffect(() => { if (!match || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), practiceRivalWait(match)); return () => clearTimeout(timer) }, [match?.id, match?.status, match?.created_at, navigate])
   const queue = async event => { event.preventDefault(); setLoading(true); setError(''); try { const result = await queueRankedBattle({ topicId, level, difficulty }); setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
   if (match && ['waiting','generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); setMatch(null) }} />
-  if (topicsLoading) return <Loader label="Loading ranked topics…" />
+  if (topicsLoading) return <Loader variant="ranked" label="Loading ranked topics…" />
   return <>
     <div className="rivals-page-heading"><div><span className="rivals-kicker"><Trophy /> Ranked mode</span><h1>Prove what you know.</h1><p>Uploaded documents are never used here. Every matchup comes from Studentley’s standardized topic bank.</p></div><div className="ranked-rules"><b>Correctness first</b><span>Speed breaks ties</span><small>Opponent gets 20 seconds after the first finish</small></div></div>
     {error && (error.includes('migration') ? <SetupRequired error={error} /> : <ErrorState text={error} />)}
@@ -173,13 +173,13 @@ export function RivalMatch() {
   useEffect(() => { document.title = 'Live Battle — Studentley Rivals'; load() }, [load])
   useEffect(() => { if (!match || match.status === 'completed' || match.status === 'cancelled') return; const timer = setInterval(load, 2000); return () => clearInterval(timer) }, [match?.status, load])
   useEffect(() => { if (!match || match.mode !== 'ranked' || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => setMatch(result.match)).catch(problem => setError(problem.message)), practiceRivalWait(match)); return () => clearTimeout(timer) }, [match?.id, match?.mode, match?.status, match?.created_at])
-  if (loading && !match) return <Loader label="Entering the arena…" />
+  if (loading && !match) return <Loader variant="arena" label="Entering the arena…" />
   if (error && !match) return <><ErrorState text={error} /><Button onClick={() => navigate('/rivals')}>Back to Rivals</Button></>
   if (!match) return null
   const me = match.players.find(player => player.is_current_user)
   if (match.mode === 'ranked' && ['waiting', 'generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); navigate('/rivals/ranked') }} />
   if (match.status === 'waiting') return <FriendLobby match={match} onStart={async () => { setLoading(true); try { setMatch((await startFriendRoom(match.id)).match) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }} loading={loading} error={error} />
-  if (match.status === 'generating') return <Loader label="Preparing the battle…" />
+  if (match.status === 'generating') return <Loader variant="arena" label="Preparing the battle…" />
   if (match.status === 'completed') return <BattleResult match={match} onExit={() => navigate('/rivals')} />
   if (me?.submitted_at) return <section className="rivals-wait-result"><div className="matchmaking-radar compact"><span /><span /><span /><Check /></div><span className="rivals-kicker">Answers locked</span><h1>You finished with {me.correct_answers}/{match.question_count} correct.</h1><p>{match.finish_deadline ? 'Your opponents have up to 20 seconds to finish.' : 'Calculating the final result…'}</p><div className="rivals-player-pills">{match.players.map(player => <span className={player.submitted_at ? 'done' : ''} key={player.player_key}><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} />{player.display_name}<PracticeLabel player={player} />{player.submitted_at && <Check />}</span>)}</div></section>
   return <RivalArena match={match} onUpdate={setMatch} />

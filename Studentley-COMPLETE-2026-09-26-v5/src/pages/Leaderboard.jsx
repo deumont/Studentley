@@ -18,7 +18,7 @@ export default function Leaderboard() {
     finally { setLoading(false) }
   }
   useEffect(() => { document.title = 'Leaderboard — Studentley'; load() }, [])
-  if (loading && !board) return <Loader label="Loading the leaderboard…" />
+  if (loading && !board) return <Loader variant="leaderboard" label="Loading the leaderboard…" />
   const stats = board?.stats || {}
   const fullLeaderboard = board?.leaderboard || []
   const topTen = fullLeaderboard.slice(0, 10)
