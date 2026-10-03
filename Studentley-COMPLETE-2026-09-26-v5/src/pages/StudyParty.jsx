@@ -368,7 +368,7 @@ function ComebackWheel({ party, onSpin, working, pendingAction, seconds }) {
     <h1>{result ? 'The wheel has spoken!' : spinning ? 'Round and round…' : `${event.target_name || 'The last-place player'}, spin the wheel!`}</h1>
     <div className="study-party-wheel-wrap" aria-label={spinning ? 'Comeback Wheel spinning' : 'Comeback Wheel'}>
       <i />
-      <div className="study-party-wheel"><span>+50</span><span>+100</span><span>+200</span><span>+300</span><span>+400</span><span>−50</span><span>SWAP</span><b>{result ? resultLabel : <Coins />}</b></div>
+      <div className="study-party-wheel"><span>+50</span><span>+100</span><span>+150</span><span>+200</span><span>+300</span><span>+400</span><span>−50</span><span>SWAP</span><b>{result ? resultLabel : <Coins />}</b></div>
     </div>
     {party.phase === 'wheel_offer' && (event.is_target
       ? <><p>You are currently in last place. One spin can turn the whole show around.</p><Button className="rivals-primary study-party-wheel-button" loading={working && pendingAction === 'wheel'} onClick={onSpin}><Sparkles /> Spin the Comeback Wheel</Button><small>{seconds}s to spin · it spins automatically if time runs out</small></>
