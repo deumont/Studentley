@@ -1,11 +1,12 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
-import { AlertTriangle, ArrowRight, BellRing, BookOpenCheck, BrainCircuit, Check, Clock3, Coins, Copy, Crown, Flame, Gauge, Link2, LoaderCircle, LockKeyhole, PartyPopper, Radio, Send, Sparkles, Target, Trophy, UploadCloud, UserPlus, Users, Volume2, VolumeX, Zap } from 'lucide-react'
+import { AlertTriangle, ArrowRight, BellRing, BookOpenCheck, BrainCircuit, Check, Clock3, Coins, Copy, Crown, Flame, Gauge, House, Link2, LoaderCircle, LockKeyhole, Maximize2, Minimize2, PartyPopper, Radio, Send, Sparkles, Target, Trophy, UploadCloud, UserPlus, Users, Volume2, VolumeX, Zap } from 'lucide-react'
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../components/UI'
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
+import { clearActiveQuizShow, openQuizShowTab, prepareQuizShowTab, rememberActiveQuizShow } from '../lib/activeQuizShow'
 import { getPersonalAIAudio } from '../services/ai'
-import { answerStudyParty, buzzStudyParty, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
+import { answerStudyParty, buzzStudyParty, continueStudyPartyHost, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
 const roomSizes = [2, 3, 4, 5, 6, 7, 8]
@@ -39,11 +40,15 @@ export default function StudyPartyHome() {
     return () => clearInterval(timer)
   }, [generationStartedAt])
 
-  const joinWithCode = useCallback(async value => {
+  const joinWithCode = useCallback(async (value, preparedWindow = null) => {
     if (value.length !== 6) return
     setLoading(true); setError('')
-    try { const result = await joinStudyParty(value); navigate(`/rivals/party/${result.party.id}`) }
-    catch (problem) { setError(problem.message) }
+    try {
+      const result = await joinStudyParty(value)
+      rememberActiveQuizShow(result.party)
+      if (!openQuizShowTab(result.party.id, preparedWindow)) navigate(`/quiz-show/${result.party.id}`)
+    }
+    catch (problem) { preparedWindow?.close(); setError(problem.message) }
     finally { setLoading(false) }
   }, [navigate])
 
@@ -66,15 +71,16 @@ export default function StudyPartyHome() {
   }
 
   const create = async event => {
-    event.preventDefault(); setLoading(true); setError(''); setGenerationSeconds(0); setGenerationStartedAt(Date.now())
+    event.preventDefault(); const gameWindow = prepareQuizShowTab(); setLoading(true); setError(''); setGenerationSeconds(0); setGenerationStartedAt(Date.now())
     try {
       const result = await createStudyParty(form)
-      navigate(`/rivals/party/${result.party.id}`)
-    } catch (problem) { setError(problem.message) }
+      rememberActiveQuizShow(result.party)
+      if (!openQuizShowTab(result.party.id, gameWindow)) navigate(`/quiz-show/${result.party.id}`)
+    } catch (problem) { gameWindow?.close(); setError(problem.message) }
     finally { setLoading(false); setGenerationStartedAt(null) }
   }
 
-  const join = event => { event.preventDefault(); joinWithCode(code) }
+  const join = event => { event.preventDefault(); joinWithCode(code, prepareQuizShowTab()) }
 
   return <>
     <div className="rivals-page-heading study-party-heading"><div><span className="rivals-kicker"><PartyPopper /> AI-hosted Quizz Show</span><h1>Turn revision into a live game show.</h1><p>Invite friends, hit the buzzer, steal points and let Studentley run every round.</p></div><div className="study-party-host-chip"><BrainCircuit /><span><small>Your host</small><b>Studentley AI</b></span></div></div>
@@ -105,7 +111,9 @@ export function StudyPartyRoom() {
   const [pendingAction, setPendingAction] = useState('')
   const [showQuit, setShowQuit] = useState(false), [quitting, setQuitting] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(true), [voiceReady, setVoiceReady] = useState(false), [voiceStatus, setVoiceStatus] = useState('')
+  const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement)), [scoreChanges, setScoreChanges] = useState({}), [leadChange, setLeadChange] = useState('')
   const audioContextRef = useRef(null), audioSourceRef = useRef(null), speechRequestRef = useRef(null), spokenRef = useRef(new Set())
+  const speechQueueRef = useRef(Promise.resolve()), previousBoardRef = useRef({}), previousRanksRef = useRef({}), lastBoardKeyRef = useRef('')
   const loadInFlightRef = useRef(false), loadedOnceRef = useRef(false), syncEpochRef = useRef(0)
 
   const load = useCallback(async (reportError = false) => {
@@ -114,7 +122,11 @@ export function StudyPartyRoom() {
     const requestEpoch = syncEpochRef.current
     try {
       const nextParty = (await loadStudyParty(id)).party
-      if (requestEpoch === syncEpochRef.current) setParty(nextParty)
+      if (requestEpoch === syncEpochRef.current) {
+        setParty(nextParty)
+        if (['waiting', 'active'].includes(nextParty.status)) rememberActiveQuizShow(nextParty)
+        else clearActiveQuizShow(nextParty.id)
+      }
       if (!loadedOnceRef.current) setError('')
       loadedOnceRef.current = true
     } catch (problem) {
@@ -125,7 +137,14 @@ export function StudyPartyRoom() {
     }
   }, [id])
 
-  useEffect(() => { document.title = 'Live Quizz Show — Studentley'; load(true) }, [load])
+  useEffect(() => {
+    document.title = 'Live Quizz Show — Studentley'
+    document.body.classList.add('quiz-show-mode')
+    const onFullscreen = () => setIsFullscreen(Boolean(document.fullscreenElement))
+    document.addEventListener('fullscreenchange', onFullscreen)
+    load(true)
+    return () => { document.body.classList.remove('quiz-show-mode'); document.removeEventListener('fullscreenchange', onFullscreen) }
+  }, [load])
   useEffect(() => {
     if (!party || party.status === 'completed') return
     let cancelled = false
@@ -140,6 +159,31 @@ export function StudyPartyRoom() {
   }, [party?.phase, party?.status, load])
   useEffect(() => { const timer = setInterval(() => setNow(Date.now()), 250); return () => clearInterval(timer) }, [])
   useEffect(() => { setAnswer('') }, [party?.current_question, party?.phase, party?.buzzed_by])
+  useEffect(() => { if (party?.status === 'completed' || party?.status === 'cancelled') clearActiveQuizShow(party.id) }, [party?.id, party?.status])
+  useEffect(() => {
+    if (!party?.players?.length) return
+    const currentScores = Object.fromEntries(party.players.map(player => [player.user_id, Number(player.score || 0)]))
+    const currentRanks = Object.fromEntries(party.players.map((player, index) => [player.user_id, index + 1]))
+    if (party.status === 'waiting' || !Object.keys(previousBoardRef.current).length) {
+      previousBoardRef.current = currentScores
+      previousRanksRef.current = currentRanks
+      return
+    }
+    if (!['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)) return
+    const boardKey = `${party.current_question}-${party.phase}-${party.host_message}`
+    if (lastBoardKeyRef.current === boardKey) return
+    const changes = Object.fromEntries(party.players.map((player, index) => [player.user_id, {
+      points: Number(player.score || 0) - Number(previousBoardRef.current[player.user_id] || 0),
+      places: Number(previousRanksRef.current[player.user_id] || index + 1) - (index + 1),
+    }]))
+    const oldLeader = Object.entries(previousRanksRef.current).find(([, rank]) => rank === 1)?.[0]
+    const newLeader = party.players[0]?.user_id
+    setScoreChanges(changes)
+    setLeadChange(oldLeader && newLeader && oldLeader !== newLeader ? party.players[0].display_name : '')
+    previousBoardRef.current = currentScores
+    previousRanksRef.current = currentRanks
+    lastBoardKeyRef.current = boardKey
+  }, [party?.current_question, party?.host_message, party?.phase, party?.players, party?.status])
 
   const stopHostVoice = useCallback(() => {
     speechRequestRef.current?.abort()
@@ -207,25 +251,53 @@ export function StudyPartyRoom() {
     return false
   }, [armHostVoice, stopHostVoice, voiceEnabled])
 
+  const queueHostLine = useCallback(text => {
+    const queued = speechQueueRef.current.catch(() => false).then(() => speakHostLine(text))
+    speechQueueRef.current = queued
+    return queued
+  }, [speakHostLine])
+
   useEffect(() => {
     if (!party || party.status !== 'active' || !party.question) return
+    const buzzerQuestion = Boolean(party.question.requires_buzzer)
+    const buzzerQuestionLive = party.phase === 'question' && buzzerQuestion && !party.buzzed_by
     const spokenLine = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
       ? party.reveal_announcement
       : ['intermission', 'double_offer', 'wheel_offer'].includes(party.phase)
         ? party.host_message
         : ''
     const key = party.phase === 'intro'
-      ? `question-${party.current_question}`
+      ? `${buzzerQuestion ? 'buzzer-countdown' : 'question'}-${party.current_question}`
       : party.phase === 'double_intro'
         ? `double-question-${party.current_question}`
+        : buzzerQuestionLive
+          ? `buzzer-question-${party.current_question}`
         : spokenLine
           ? `${party.phase}-${party.current_question}-${spokenLine}`
           : ''
     if (!key || spokenRef.current.has(key)) return
     spokenRef.current.add(key)
     const run = async () => {
+      if (party.phase === 'intro' && buzzerQuestion) {
+        if (party.is_host) {
+          try { syncEpochRef.current += 1; setParty((await startStudyPartyCountdown(party.id)).party) }
+          catch (problem) { setError(problem.message); await load() }
+        }
+        return
+      }
+      if (buzzerQuestionLive) {
+        await queueHostLine(party.question.prompt)
+        return
+      }
       if (spokenLine) {
-        await speakHostLine(spokenLine)
+        const spoken = await queueHostLine(spokenLine)
+        const shouldContinue = ['reveal', 'double_reveal', 'wheel_result', 'intermission'].includes(party.phase)
+        if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
+        if (party.is_host && shouldContinue) {
+          await new Promise(resolve => setTimeout(resolve, 1800))
+          try { syncEpochRef.current += 1; setParty((await continueStudyPartyHost(party.id)).party) }
+          catch (problem) { setError(problem.message); await load() }
+        }
         return
       }
       const directed = party.players.find(player => player.user_id === party.double_or_nothing?.target_user_id)
@@ -233,7 +305,7 @@ export function StudyPartyRoom() {
         ? `${directed?.display_name || 'Player'}, this is Double or Nothing. `
         : ''
       const swapIntro = party.question.swap_round ? 'Score Swap Round. Everyone can answer. The winner must swap their total points with another player. ' : ''
-      const spoken = await speakHostLine(`${target}${swapIntro}${party.question.prompt}`)
+      const spoken = await queueHostLine(`${target}${swapIntro}${party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
       if (party.is_host) {
         try { syncEpochRef.current += 1; setParty((await startStudyPartyCountdown(party.id)).party) }
@@ -241,11 +313,27 @@ export function StudyPartyRoom() {
       }
     }
     run()
-  }, [load, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.swap_round, party?.reveal_announcement, party?.status, speakHostLine])
+  }, [load, party?.buzzed_by, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.requires_buzzer, party?.question?.swap_round, party?.reveal_announcement, party?.status, queueHostLine])
+
+  useEffect(() => {
+    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || !party.buzzed_by) return
+    const key = `buzz-reaction-${party.current_question}-${party.buzzed_by}`
+    if (spokenRef.current.has(key)) return
+    spokenRef.current.add(key)
+    stopHostVoice()
+    queueHostLine(party.host_message)
+  }, [party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, queueHostLine, stopHostVoice])
+
+  useEffect(() => {
+    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || party.buzzed_by || !party.attempted_user_ids?.length) return
+    const key = `steal-reaction-${party.current_question}-${party.attempted_user_ids.length}`
+    if (spokenRef.current.has(key)) return
+    spokenRef.current.add(key)
+    queueHostLine(party.host_message)
+  }, [party?.attempted_user_ids?.length, party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, queueHostLine])
 
   useEffect(() => {
     if (!['countdown', 'double_countdown'].includes(party?.phase)) return
-    stopHostVoice()
     setVoiceStatus('')
     if (!party.is_host || !party.phase_deadline) return
     const wait = Math.max(0, new Date(party.phase_deadline).getTime() - Date.now()) + 40
@@ -254,7 +342,7 @@ export function StudyPartyRoom() {
       catch { await load() }
     }, wait)
     return () => clearTimeout(timer)
-  }, [load, party?.id, party?.is_host, party?.phase, party?.phase_deadline, stopHostVoice])
+  }, [load, party?.id, party?.is_host, party?.phase, party?.phase_deadline])
 
   useEffect(() => () => { stopHostVoice(); audioContextRef.current?.close?.() }, [stopHostVoice])
 
@@ -303,30 +391,42 @@ export function StudyPartyRoom() {
     setQuitting(true); setError('')
     try {
       await quitStudyParty(party.id)
+      clearActiveQuizShow(party.id)
       await refresh()
       navigate('/rivals')
     } catch (problem) { setError(problem.message); setShowQuit(false) }
     finally { setQuitting(false) }
   }
+  const leaveGame = () => {
+    if (window.opener && !window.opener.closed) window.close()
+    else navigate('/rivals')
+  }
+  const toggleFullscreen = async () => {
+    try {
+      if (document.fullscreenElement) await document.exitFullscreen()
+      else await document.documentElement.requestFullscreen()
+    } catch { setError('Full-screen mode is blocked by this browser.') }
+  }
 
   if (party.status === 'waiting') {
     const invite = `${window.location.origin}/rivals/party?join=${party.room_code}`
-    return <section className="study-party-lobby"><div className="study-party-lobby-orb"><PartyPopper /></div><span className="rivals-kicker">AI host is ready</span><h1>{party.title}</h1><p>Invite your friends. Studentley will control the questions, timers, buzzers and scoring once you begin.</p><div className="study-party-share"><button onClick={() => copyValue(party.room_code, 'code')}><span><small>Room code</small><b>{party.room_code}</b></span>{copied === 'code' ? <Check /> : <Copy />}</button><button onClick={() => copyValue(invite, 'link')}><span><small>Invite friends</small><b>{copied === 'link' ? 'Link copied!' : 'Copy invite link'}</b></span><Link2 /></button></div><div className="lobby-details"><span>{party.subject}</span><span>{party.level}</span><span>{party.game_mode === 'teams' ? 'Teams' : 'Free-for-All'}</span><span>{party.question_count} questions</span></div><button type="button" className={`study-party-voice-toggle ${voiceReady ? 'ready' : ''}`} onClick={async () => { setVoiceEnabled(true); await armHostVoice() }}><Volume2 /> {voiceReady ? 'Natural host voice ready' : 'Enable natural host voice'}</button>{voiceStatus && <small className="study-party-voice-status">{voiceStatus}</small>}{error && <ErrorState text={error} />}<PartyScoreboard party={party} lobby />{party.is_host ? <Button className="rivals-primary study-party-start" loading={working} disabled={party.players.length < 2} onClick={start}><Zap /> Start with {party.players.length} players</Button> : <p className="waiting-host"><LoaderCircle className="spin" /> Waiting for the host to start…</p>}</section>
+    return <section className="study-party-lobby"><header className="quiz-show-lobby-controls"><button onClick={leaveGame}><House /> Back to Studentley</button><button onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 /> : <Maximize2 />} {isFullscreen ? 'Exit full screen' : 'Full screen'}</button></header><div className="study-party-lobby-orb"><PartyPopper /></div><span className="rivals-kicker">AI host is ready</span><h1>{party.title}</h1><p>Invite your friends. Everyone stays here until the host starts the game.</p><div className="study-party-share"><button onClick={() => copyValue(party.room_code, 'code')}><span><small>Room code</small><b>{party.room_code}</b></span>{copied === 'code' ? <Check /> : <Copy />}</button><button onClick={() => copyValue(invite, 'link')}><span><small>Invite friends</small><b>{copied === 'link' ? 'Link copied!' : 'Copy invite link'}</b></span><Link2 /></button></div><div className="lobby-details"><span>{party.subject}</span><span>{party.level}</span><span>{party.game_mode === 'teams' ? 'Teams' : 'Free-for-All'}</span><span>{party.question_count} questions</span></div><button type="button" className={`study-party-voice-toggle ${voiceReady ? 'ready' : ''}`} onClick={async () => { setVoiceEnabled(true); await armHostVoice() }}><Volume2 /> {voiceReady ? 'Male AI host voice ready' : 'Enable male AI host voice'}</button>{voiceStatus && <small className="study-party-voice-status">{voiceStatus}</small>}{error && <ErrorState text={error} />}<PartyScoreboard party={party} lobby />{party.is_host ? <Button className="rivals-primary study-party-start" loading={working} disabled={party.players.length < 2} onClick={start}><Zap /> Start Game</Button> : <p className="waiting-host"><LoaderCircle className="spin" /> Waiting for the host to press Start Game…</p>}</section>
   }
 
-  if (party.status === 'completed') return <StudyPartyResults party={party} onExit={() => navigate('/rivals')} />
+  if (party.status === 'completed') return <StudyPartyResults party={party} onExit={leaveGame} />
 
   const hostMessage = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
   const doublePhase = party.phase.startsWith('double_')
   const wheelPhase = party.phase.startsWith('wheel_')
+  const showLeaderboard = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
 
   return <>
   <section className="study-party-live">
-    <header className="study-party-live-header"><button onClick={() => setShowQuit(true)}><ArrowRight /> Quit show</button><div><span className="study-party-live-dot" /> AI host live</div><span className="study-party-live-tools"><button type="button" onClick={async () => { if (voiceEnabled) { stopHostVoice(); setVoiceEnabled(false); setVoiceStatus('') } else { setVoiceEnabled(true); await armHostVoice() } }} title={voiceEnabled ? 'Mute host voice' : 'Enable host voice'}>{voiceEnabled ? <Volume2 /> : <VolumeX />}</button><b>{party.question_number}/{party.question_count}</b></span></header>
+    <header className="study-party-live-header"><span className="study-party-exit-tools"><button onClick={leaveGame}><House /> Leave tab</button><button className="danger" onClick={() => setShowQuit(true)}><ArrowRight /> Quit game</button></span><div><span className="study-party-live-dot" /> AI host live</div><span className="study-party-live-tools"><button type="button" onClick={toggleFullscreen} title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}>{isFullscreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" onClick={async () => { if (voiceEnabled) { stopHostVoice(); setVoiceEnabled(false); setVoiceStatus('') } else { setVoiceEnabled(true); await armHostVoice() } }} title={voiceEnabled ? 'Mute host voice' : 'Enable host voice'}>{voiceEnabled ? <Volume2 /> : <VolumeX />}</button><b>{party.question_number}/{party.question_count}</b></span></header>
     <div className={`study-party-host-message ${doublePhase ? 'double' : ''}`} key={hostMessage}><BrainCircuit /><p>{hostMessage}</p></div>
     {voiceStatus && <div className="study-party-voice-status live" role="status">{voiceStatus}</div>}
     {error && <ErrorState text={error} />}
-    <div className="study-party-stage">
+    <div className={`study-party-stage ${showLeaderboard ? 'leaderboard-visible' : 'gameplay-only'}`}>
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
         {wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
           <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Winner swaps scores</b> : party.question?.is_final && <b><Crown /> Final · Double points</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
@@ -337,7 +437,7 @@ export function StudyPartyRoom() {
           {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <>{party.swap_result && <SwapResult result={party.swap_result} />}<PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
         </>}
       </main>
-      <PartyScoreboard party={party} />
+      {showLeaderboard && <PartyScoreboard party={party} changes={scoreChanges} leadChange={leadChange} />}
     </div>
   </section>
   {showQuit && <Modal title="Quit this Quizz Show?" description="This action cannot be undone." onClose={() => !quitting && setShowQuit(false)}><div className="study-party-quit-warning"><span><AlertTriangle /></span><div><b>Are you sure you want to quit?</b><p>You will lose 20 Studentley Points and leave the live room. If only one player remains, they win the show.</p></div></div><div className="study-party-modal-actions"><Button variant="ghost" disabled={quitting} onClick={() => setShowQuit(false)}>Keep playing</Button><Button className="study-party-quit-confirm" loading={quitting} onClick={quit}>Quit and lose 20 SP</Button></div></Modal>}
@@ -363,12 +463,15 @@ function ComebackWheel({ party, onSpin, working, pendingAction, seconds }) {
   const result = party.phase === 'wheel_result'
   const swapped = result && event.outcome === 'swap'
   const resultLabel = swapped ? 'SCORE SWAP' : Number(event.delta || 0) >= 0 ? `+${Number(event.delta || 0)}` : `${Number(event.delta || 0)}`
+  const stopIndex = Math.max(0, Math.min(7, Number(event.stop_index || 0)))
+  const stopRotation = 1800 + ((360 - (stopIndex * 45 + 22.5)) % 360)
+  const wheelStyle = { '--wheel-stop': `${stopRotation}deg`, '--wheel-stop-reverse': `${-stopRotation}deg` }
   return <div className={`study-party-wheel-stage ${spinning ? 'spinning' : ''} ${result ? 'result' : ''}`}>
     <span className="study-party-wheel-kicker"><Sparkles /> Mid-game comeback</span>
     <h1>{result ? 'The wheel has spoken!' : spinning ? 'Round and round…' : `${event.target_name || 'The last-place player'}, spin the wheel!`}</h1>
     <div className="study-party-wheel-wrap" aria-label={spinning ? 'Comeback Wheel spinning' : 'Comeback Wheel'}>
       <i />
-      <div className="study-party-wheel"><span>+50</span><span>+100</span><span>+150</span><span>+200</span><span>+300</span><span>+400</span><span>−50</span><span>SWAP</span><b>{result ? resultLabel : <Coins />}</b></div>
+      <div className="study-party-wheel" style={wheelStyle}><span>+50</span><span>+100</span><span>+150</span><span>+200</span><span>+300</span><span>+400</span><span>−50</span><span>SWAP</span><b>{result ? resultLabel : <Coins />}</b></div>
     </div>
     {party.phase === 'wheel_offer' && (event.is_target
       ? <><p>You are currently in last place. One spin can turn the whole show around.</p><Button className="rivals-primary study-party-wheel-button" loading={working && pendingAction === 'wheel'} onClick={onSpin}><Sparkles /> Spin the Comeback Wheel</Button><small>{seconds}s to spin · it spins automatically if time runs out</small></>
@@ -391,7 +494,7 @@ function DoubleStage({ party, answer, setAnswer, onSubmit, working, pendingActio
   const reveal = party.phase === 'double_reveal'
   return <>
     <div className="study-party-question-top"><span><Coins /> Double or Nothing</span><b><Crown /> {offer?.wager || 0} points at risk</b><time className={party.phase === 'double_question' && seconds <= 5 ? 'critical' : ''}>{listening ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
-    <div className={`study-party-timer ${listening ? 'listening' : ''}`}><span style={{ width: listening ? '100%' : `${Math.min(100, remaining / 25000 * 100)}%` }} /></div>
+    <div className={`study-party-timer ${listening ? 'listening' : ''}`}><span style={{ width: listening ? '100%' : `${Math.min(100, remaining / 20000 * 100)}%` }} /></div>
     <div className="study-party-directed double"><Target /> Only <b>{offer?.target_name || 'the selected player'}</b> can answer</div>
     <small>Follow-up challenge · double the reward or lose it</small>
     <h1>{party.question?.prompt}</h1>
@@ -405,14 +508,14 @@ function StudyPartyAnswer({ party, me, buzzerPlayer, answer, setAnswer, onBuzz, 
   const attempted = party.attempted_user_ids.includes(me?.user_id)
   if (pendingAction === 'buzz') return <div className="study-party-answer-locked pending"><BellRing /><b>Buzzer pressed!</b><small>Claiming your answer now…</small></div>
   if (pendingAction === 'answer') return <div className="study-party-answer-locked pending"><Check /><b>Answer locked!</b><small>Updating the scoreboard…</small></div>
-  if (me?.has_answered || attempted) return <div className="study-party-answer-locked"><Check /> Your answer is locked. Watch the live scoreboard.</div>
+  if (me?.has_answered || attempted) return <div className="study-party-answer-locked"><Check /> Your answer is locked. The scoreboard appears when the question ends.</div>
   if (question.requires_buzzer && !party.buzzed_by) return <button className="study-party-buzzer" disabled={working} onClick={onBuzz}><span><BellRing /></span><b>BUZZ</b><small>First tap gets the first answer</small></button>
   if (question.requires_buzzer && party.buzzed_by !== me?.user_id) return <div className="study-party-buzzed"><BellRing /><b>{buzzerPlayer?.display_name || 'Another player'} buzzed first</b><small>Get ready to steal if the answer is wrong.</small></div>
   return <form className="study-party-answer" onSubmit={onSubmit}>{question.options?.length ? <div className="study-party-options">{question.options.map((option, index) => <button type="button" className={answer === option ? 'selected' : ''} onClick={() => setAnswer(option)} key={option}><b>{String.fromCharCode(65 + index)}</b><span>{option}</span></button>)}</div> : <div className="study-party-text-answer"><input autoFocus maxLength="60" value={answer} onChange={event => setAnswer(event.target.value.replace(/\s+/g, ''))} placeholder="One-word answer" aria-label="One-word answer" /><small>One word only</small><Button className="rivals-primary" loading={working} disabled={!answer.trim()}><Send /> Lock answer</Button></div>}{question.options?.length > 0 && <Button className="rivals-primary full" loading={working} disabled={!answer}><Send /> Lock answer</Button>}</form>
 }
 
-function PartyScoreboard({ party, lobby = false }) {
-  return <aside className={`card study-party-scoreboard ${lobby ? 'lobby' : ''}`}><header><div><span>Live points</span><h2>{party.game_mode === 'teams' ? 'Team scoreboard' : 'Leaderboard'}</h2></div><Trophy /></header>{party.game_mode === 'teams' && <div className="study-party-team-scores">{party.team_scores.map(team => <span key={team.team}><small>Team {team.team}</small><b key={team.score}>{team.score}</b></span>)}</div>}<div className="study-party-player-list">{party.players.map((player, index) => <article className={`${player.is_current_user ? 'current' : ''} ${player.user_id === party.buzzed_by ? 'buzzed' : ''}`} key={player.user_id}><em>{index + 1}</em><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} /><span><b>{player.display_name}{player.is_current_user && ' (You)'}</b><small>{party.game_mode === 'teams' ? `Team ${player.team}` : player.streak >= 3 ? `${player.streak} streak 🔥` : lobby ? 'Ready' : `${player.accuracy}% accuracy`}</small></span><strong key={player.score}>{player.score}</strong></article>)}</div></aside>
+function PartyScoreboard({ party, lobby = false, changes = {}, leadChange = '' }) {
+  return <aside className={`card study-party-scoreboard ${lobby ? 'lobby' : 'round-result'}`}>{leadChange && !lobby && <div className="study-party-lead-change"><Crown /><span><small>New leader</small><b>{leadChange} takes the lead!</b></span></div>}<header><div><span>{lobby ? 'Players connected' : 'End of question'}</span><h2>{lobby ? 'Waiting room' : party.game_mode === 'teams' ? 'Updated team scores' : 'Scoreboard update'}</h2></div><Trophy /></header>{party.game_mode === 'teams' && <div className="study-party-team-scores">{party.team_scores.map(team => <span key={team.team}><small>Team {team.team}</small><b key={team.score}>{team.score}</b></span>)}</div>}<div className="study-party-player-list">{party.players.map((player, index) => { const change = changes[player.user_id] || {}; const points = Number(change.points || 0); const places = Number(change.places || 0); return <article className={`${player.is_current_user ? 'current' : ''} ${index === 0 && !lobby ? 'leader' : ''} ${points > 0 ? 'gained' : points < 0 ? 'lost' : ''}`} key={player.user_id}><em>{index + 1}</em><ProfileAvatar name={player.display_name} path={player.avatar_path} bucket={player.avatar_bucket} /><span><b>{player.display_name}{player.is_current_user && ' (You)'}</b><small>{party.game_mode === 'teams' ? `Team ${player.team}` : player.streak >= 3 ? `${player.streak} streak 🔥` : lobby ? 'Ready' : `${player.accuracy}% accuracy`}</small></span>{!lobby && (points !== 0 || places !== 0) && <div className="study-party-score-change"><small>{points > 0 ? `+${points}` : points} pts</small>{places !== 0 && <b>{places > 0 ? `▲ ${places}` : `▼ ${Math.abs(places)}`}</b>}</div>}<strong key={player.score}>{player.score}</strong></article> })}</div></aside>
 }
 
 function StudyPartyResults({ party, onExit }) {

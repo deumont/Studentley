@@ -17,6 +17,7 @@ async function studyPartyRequest(action, input = {}) {
 export const createStudyParty = input => studyPartyRequest('create', input)
 export const joinStudyParty = code => studyPartyRequest('join', { code })
 export const loadStudyParty = partyId => studyPartyRequest('get', { partyId })
+export const continueStudyPartyHost = partyId => studyPartyRequest('continue_host', { partyId })
 export const startStudyParty = partyId => studyPartyRequest('start', { partyId })
 export const startStudyPartyCountdown = partyId => studyPartyRequest('start_countdown', { partyId })
 export const openStudyPartyQuestion = partyId => studyPartyRequest('open_question', { partyId })

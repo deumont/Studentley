@@ -1,5 +1,5 @@
 import React from 'react'
-import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useApp } from './context/AppContext'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
@@ -22,6 +22,7 @@ import SeoManager from './components/SeoManager'
 import RivalsLayout from './components/RivalsLayout'
 import RivalsDashboard, { FriendRivals, RankedRivals, RivalMatch, RivalQuizLibrary } from './pages/Rivals'
 import StudyPartyHome, { StudyPartyRoom } from './pages/StudyParty'
+import ActiveQuizShowRejoin from './components/ActiveQuizShowRejoin'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile } = useApp()
@@ -35,8 +36,15 @@ function Protected({ children }) {
   return children
 }
 
+function LegacyQuizShowRedirect() {
+  const { id } = useParams()
+  return <Navigate to={`/quiz-show/${id}`} replace />
+}
+
 export default function App() {
-  const { notice } = useApp()
+  const { notice, session } = useApp()
+  const location = useLocation()
+  const gameMode = location.pathname.startsWith('/quiz-show/')
   return <>
     <SeoManager />
     <Routes>
@@ -51,12 +59,13 @@ export default function App() {
       <Route path="/auth/*" element={<Auth />} />
       <Route path="/legal/:document" element={<Legal />} />
       <Route path="/onboarding" element={<Protected><Onboarding /></Protected>} />
+      <Route path="/quiz-show/:id" element={<Protected><StudyPartyRoom /></Protected>} />
       <Route path="/rivals" element={<Protected><RivalsLayout /></Protected>}>
         <Route index element={<RivalsDashboard />} />
         <Route path="ranked" element={<RankedRivals />} />
         <Route path="friends" element={<FriendRivals />} />
         <Route path="party" element={<StudyPartyHome />} />
-        <Route path="party/:id" element={<StudyPartyRoom />} />
+        <Route path="party/:id" element={<LegacyQuizShowRedirect />} />
         <Route path="quizzes" element={<RivalQuizLibrary />} />
         <Route path="match/:id" element={<RivalMatch />} />
       </Route>
@@ -73,7 +82,8 @@ export default function App() {
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
-    <GenerationStatus />
-    {notice && <div className={`toast ${notice.type}`} role="status">{notice.type === 'error' ? '!' : '✓'} {notice.text}</div>}
+    {!gameMode && <GenerationStatus />}
+    {!gameMode && session && <ActiveQuizShowRejoin />}
+    {!gameMode && notice && <div className={`toast ${notice.type}`} role="status">{notice.type === 'error' ? '!' : '✓'} {notice.text}</div>}
   </>
 }

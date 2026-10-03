@@ -19,7 +19,7 @@ export default async function handler(request, response) {
     if (!key) return response.status(503).json({ error: 'The natural voice is not configured.' })
 
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), 25000)
+    const timeout = setTimeout(() => controller.abort(), 50000)
     let speechResponse
     try {
       speechResponse = await fetch('https://api.openai.com/v1/audio/speech', {
@@ -28,10 +28,10 @@ export default async function handler(request, response) {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
-          voice: process.env.OPENAI_TTS_VOICE || 'marin',
+          voice: quizShow ? (process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx') : (process.env.OPENAI_TTS_VOICE || 'marin'),
           input,
           instructions: quizShow
-            ? 'Speak like an energetic, warm and dramatic live quiz-show host for teenagers. Sound natural, playful and genuinely excited. Vary your rhythm and emphasis, use short dramatic pauses before important reveals, celebrate correct answers, and make double-or-nothing moments feel special. Keep every line clear and punchy, never robotic, shouty or overacted.'
+            ? 'Use a confident, natural male voice like the main host of a high-energy television quiz show for teenagers. Be warm, witty, dramatic and genuinely excited. Vary rhythm, emphasis and reactions. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use short dramatic pauses before reveals. Keep every line punchy, clear and human, never robotic, monotonous, shouty or overacted.'
             : 'Speak like a warm, calm and encouraging personal tutor. Sound natural and conversational, with gentle expression, clear pronunciation and relaxed pacing. Avoid exaggerated enthusiasm and robotic pauses.',
           response_format: 'mp3',
         }),

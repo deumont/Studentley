@@ -6,11 +6,12 @@ export const config = { maxDuration: 60 }
 const ROUND_TYPES = ['buzzer', 'multiple_choice', 'quick_answer', 'rapid_fire', 'true_false', 'team_round']
 const BUZZER_ROUNDS = new Set(['buzzer', 'team_round'])
 const DIFFICULTIES = ['Accessible', 'Standard', 'Challenging']
-const REVEAL_MS = 15000
-const INTERMISSION_MS = 15000
+const REVEAL_MS = 90000
+const INTERMISSION_MS = 90000
 const INTRO_FAILSAFE_MS = 90000
 const COUNTDOWN_MS = 3000
 const DOUBLE_OFFER_MS = 25000
+const DOUBLE_QUESTION_SECONDS = 20
 const SPECIAL_CHOICE_MS = 25000
 const WHEEL_SPIN_MS = 4500
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
@@ -68,6 +69,7 @@ const publicHostMessage = party => isQuestionIntro(party)
     ? String(party.host_message).slice(QUESTION_COUNTDOWN_PREFIX.length)
     : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || party.host_message
 const requiresBuzzer = question => Boolean(question?.swap_round) || BUZZER_ROUNDS.has(question?.round_type)
+const liveQuestionTimeLimit = question => requiresBuzzer(question) ? Math.max(45, playableTimeLimit(question)) : playableTimeLimit(question)
 
 async function getPartyRecord(db, identifier) {
   const query = db.from('rival_study_parties').select('*')
@@ -105,7 +107,7 @@ function publicQuestion(question, reveal, answersVisible) {
     correct_answer: reveal ? question.correct_answer : '',
     topic: question.topic,
     difficulty: question.difficulty,
-    time_limit: playableTimeLimit(question),
+    time_limit: liveQuestionTimeLimit(question),
     points: question.points,
     directed: false,
     swap_round: Boolean(question.swap_round),
@@ -124,7 +126,7 @@ function publicFollowUpQuestion(question, reveal, answersVisible, wager = 0) {
     correct_answer: reveal ? question.follow_up_correct_answer : '',
     topic: question.topic,
     difficulty: 'Double or Nothing',
-    time_limit: 25,
+    time_limit: DOUBLE_QUESTION_SECONDS,
     points: wager,
     directed: true,
     is_final: false,
@@ -194,7 +196,7 @@ async function serializeParty(db, party, userId) {
   const correctNames = correctAnswers.map(answer => playerName(profiles.get(answer.user_id)))
   const correctPoints = correctAnswers.reduce((highest, answer) => Math.max(highest, Number(answer.points || 0)), 0)
   const winners = correctNames.join(', ')
-  const revealStyle = Math.abs(Number(party.current_question || 0)) % 3
+  const revealStyle = Math.abs(Number(party.current_question || 0)) % 6
   const revealAnnouncement = reveal && !double
     ? wheel?.phase === 'wheel_result'
       ? wheel.payload.message
@@ -203,11 +205,17 @@ async function serializeParty(db, party, userId) {
           `Yes! ${winners} got it right${correctPoints ? ` for up to ${correctPoints} points` : ''}. The correct answer was ${question?.correct_answer}.`,
           `What a play! ${winners} found the answer${correctPoints ? ` and earned up to ${correctPoints} points` : ''}. It was ${question?.correct_answer}.`,
           `${winners} nailed that one${correctPoints ? ` for up to ${correctPoints} points` : ''}! The answer was ${question?.correct_answer}.`,
+          `Absolutely clinical from ${winners}! ${question?.correct_answer} was the answer, and those points are locked in.`,
+          `${winners} came to play! The answer was ${question?.correct_answer}. The leaderboard had better pay attention.`,
+          `That was sharp! ${winners} score${correctPoints ? ` up to ${correctPoints} points` : ''}. ${question?.correct_answer} is correct.`,
         ][revealStyle]
       : [
           `No one got it this time. The correct answer was ${question?.correct_answer}.`,
           `That one caught everyone out! The answer was ${question?.correct_answer}.`,
           `A tough round! Nobody scored, and the correct answer was ${question?.correct_answer}.`,
+          `Silence in the studio! ${question?.correct_answer} was the answer. Let us pretend that round never happened.`,
+          `The points have left the building. Nobody found ${question?.correct_answer} this time.`,
+          `Ouch. The scoreboard did not move. The answer was ${question?.correct_answer}—wake up for the next one!`,
         ][revealStyle])
     : doubleReveal
       ? double.payload.message
@@ -499,7 +507,7 @@ async function openQuestion(db, userId, input) {
   if (!question) throw Object.assign(new Error('The next question is missing.'), { status: 409 })
   const { data, error } = await db.from('rival_study_parties').update({
     phase: 'question',
-    phase_deadline: new Date(Date.now() + (double?.phase === 'double_countdown' ? 25000 : playableTimeLimit(question)) * 1000).toISOString(),
+    phase_deadline: new Date(Date.now() + (double?.phase === 'double_countdown' ? DOUBLE_QUESTION_SECONDS : liveQuestionTimeLimit(question)) * 1000).toISOString(),
     host_message: double?.phase === 'double_countdown'
       ? markerMessage(DOUBLE_ACTIVE_PREFIX, { ...double.payload, message: `${double.payload.target_name}, Double or Nothing is live!` })
       : 'Answers are open!',
@@ -604,6 +612,8 @@ function leadMessage(players, profiles, nextQuestion) {
   const leader = sorted[0]
   const runnerUp = sorted[1]
   const leaderName = leader ? playerName(profiles.get(leader.user_id)) : 'Someone'
+  const last = sorted[sorted.length - 1]
+  const lastName = last ? playerName(profiles.get(last.user_id)) : 'Someone'
   const gap = Math.max(0, Number(leader?.score || 0) - Number(runnerUp?.score || 0))
   const messages = []
   if (streakPlayer) messages.push(`${playerName(profiles.get(streakPlayer.user_id))} is on a huge ${streakPlayer.streak}-answer streak!`)
@@ -612,6 +622,14 @@ function leadMessage(players, profiles, nextQuestion) {
     messages.push(`${leaderName} takes the lead—but this is still anyone's game!`)
   }
   if (leader && runnerUp && gap <= 75) messages.push(`Only ${gap} points separate the top two. This is close!`)
+  if (last && leader && last.user_id !== leader.user_id) {
+    messages.push(`${lastName}, your score is taking a study break. Time to wake it up!`)
+    messages.push(`${lastName} is currently holding the leaderboard upside down. A comeback would look excellent right now!`)
+    messages.push(`${lastName}, the bottom of the board has had enough of you. Make your move!`)
+  }
+  if (leader && gap >= 150) messages.push(`${leaderName} is running away with it! Somebody stop this academic rampage!`)
+  messages.push('That answer just shook the studio!')
+  messages.push('The scoreboard is moving—nobody relax yet!')
   messages.push('That question changed the scoreboard!')
   messages.push('Nice round—get ready, the next one is coming!')
   const picked = messages[Math.floor(Math.random() * messages.length)]
@@ -707,9 +725,9 @@ async function advanceParty(db, party) {
     const changes = double?.phase === 'double_intro'
       ? { phase: 'intermission', phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(), host_message: markerMessage(DOUBLE_COUNTDOWN_PREFIX, double.payload) }
       : double?.phase === 'double_countdown'
-        ? { phase: 'question', phase_deadline: new Date(Date.now() + 25000).toISOString(), host_message: markerMessage(DOUBLE_ACTIVE_PREFIX, double.payload) }
+        ? { phase: 'question', phase_deadline: new Date(Date.now() + DOUBLE_QUESTION_SECONDS * 1000).toISOString(), host_message: markerMessage(DOUBLE_ACTIVE_PREFIX, double.payload) }
       : isQuestionCountdown(party)
-      ? { phase: 'question', phase_deadline: new Date(Date.now() + playableTimeLimit(current) * 1000).toISOString(), host_message: 'Answers are open!' }
+      ? { phase: 'question', phase_deadline: new Date(Date.now() + liveQuestionTimeLimit(current) * 1000).toISOString(), host_message: 'Answers are open!' }
       : isQuestionIntro(party)
         ? { phase: 'intermission', phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(), host_message: questionCountdownMessage(publicHostMessage(party)) }
       : { phase: 'intermission', phase_deadline: new Date(Date.now() + INTRO_FAILSAFE_MS).toISOString(), host_message: questionIntroMessage(roundIntro(current)) }
@@ -733,6 +751,22 @@ async function loadParty(db, userId, input) {
   return { party: await serializeParty(db, party, userId) }
 }
 
+async function continueHostPhase(db, userId, input) {
+  const party = await getPartyRecord(db, input.partyId)
+  if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can continue the show.'), { status: 403 })
+  const double = doubleState(party)
+  const wheel = wheelState(party)
+  const isPassiveIntermission = party.phase === 'intermission'
+    && !double
+    && !wheel
+    && !isQuestionIntro(party)
+    && !isQuestionCountdown(party)
+  const canContinue = party.phase === 'reveal' || isPassiveIntermission
+  if (!canContinue) return { party: await serializeParty(db, party, userId) }
+  const advanced = await advanceParty(db, { ...party, phase_deadline: new Date(0).toISOString() })
+  return { party: await serializeParty(db, advanced, userId) }
+}
+
 async function buzz(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   const players = await getPartyPlayers(db, party.id)
@@ -744,7 +778,15 @@ async function buzz(db, userId, input) {
   if ((party.attempted_user_ids || []).includes(userId)) throw Object.assign(new Error('You already attempted this question.'), { status: 409 })
   const profiles = await getProfiles(db, [userId])
   const now = new Date()
-  const { data, error } = await db.from('rival_study_parties').update({ buzzed_by: userId, buzzed_at: now.toISOString(), phase_deadline: new Date(now.getTime() + 12000).toISOString(), host_message: `${playerName(profiles.get(userId))} buzzed first!` }).eq('id', party.id).eq('phase', 'question').eq('current_question', party.current_question).is('buzzed_by', null).select().maybeSingle()
+  const name = playerName(profiles.get(userId))
+  const reactions = [
+    `Whoa, ${name} already buzzed! That was lightning fast. Will the answer be right?`,
+    `${name} smashes the buzzer before the host can even finish! Bold move—now prove it!`,
+    `That was quick! ${name} is first on the buzzer. Genius or glorious guess?`,
+    `${name} could not wait another second! The spotlight is yours—will you score?`,
+  ]
+  const hostMessage = reactions[Math.floor(Math.random() * reactions.length)]
+  const { data, error } = await db.from('rival_study_parties').update({ buzzed_by: userId, buzzed_at: now.toISOString(), phase_deadline: new Date(now.getTime() + 12000).toISOString(), host_message: hostMessage }).eq('id', party.id).eq('phase', 'question').eq('current_question', party.current_question).is('buzzed_by', null).select().maybeSingle()
   if (error) throw error
   if (!data) throw Object.assign(new Error('Someone else reached the buzzer first.'), { status: 409 })
   return { party: await serializeParty(db, data, userId) }
@@ -859,9 +901,10 @@ async function finishQuestionFlow(db, party) {
 async function beginComebackWheelSpin(db, party) {
   const state = wheelState(party)
   if (state?.phase !== 'wheel_offer') return party
-  const outcomes = [50, 100, 100, 150, 200, 300, 400, -50, 'swap', 'swap']
-  const outcome = outcomes[Math.floor(Math.random() * outcomes.length)]
-  const payload = { ...state.payload, outcome, message: `${state.payload.target_name} is spinning the Comeback Wheel!` }
+  const outcomes = [50, 100, 150, 200, 300, 400, -50, 'swap']
+  const stopIndex = Math.floor(Math.random() * outcomes.length)
+  const outcome = outcomes[stopIndex]
+  const payload = { ...state.payload, outcome, stop_index: stopIndex, message: `${state.payload.target_name} is spinning the Comeback Wheel!` }
   const { data, error } = await db.from('rival_study_parties').update({ phase: 'intermission', phase_deadline: new Date(Date.now() + WHEEL_SPIN_MS).toISOString(), host_message: markerMessage(WHEEL_SPINNING_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
   if (error) throw error
   return data || getPartyRecord(db, party.id)
@@ -969,9 +1012,15 @@ async function submitAnswer(db, userId, input) {
   } else if (buzzerRequired) {
     const attempted = [...new Set([...(party.attempted_user_ids || []), userId])]
     const exhausted = attempted.length >= players.length
+    const misses = [
+      `${name} misses it! The steal is open—who was actually listening?`,
+      `Not quite, ${name}! Brave buzz, unfortunate ending. The steal is live!`,
+      `${name} went fast but not accurate. Somebody steal these points!`,
+      `Oh, ${name}! The buzzer confidence was excellent; the answer was less convincing. Steal open!`,
+    ]
     const changes = exhausted
       ? { phase: 'reveal', attempted_user_ids: attempted, phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `No steal this time. The answer was ${question.correct_answer}.` }
-      : { attempted_user_ids: attempted, directed_user_id: null, buzzed_by: null, buzzed_at: null, phase_deadline: new Date(Date.now() + Math.min(15, playableTimeLimit(question)) * 1000).toISOString(), host_message: `${name} missed it—the steal is open!` }
+      : { attempted_user_ids: attempted, directed_user_id: null, buzzed_by: null, buzzed_at: null, phase_deadline: new Date(Date.now() + Math.min(15, playableTimeLimit(question)) * 1000).toISOString(), host_message: misses[Math.floor(Math.random() * misses.length)] }
     const { data, error } = await db.from('rival_study_parties').update(changes).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
     if (error) throw error
     updatedParty = data
@@ -1000,6 +1049,7 @@ export default async function handler(request, response) {
     if (action === 'create') return response.status(200).json(await createParty(db, user.id, input))
     if (action === 'join') return response.status(200).json(await joinParty(db, user.id, input))
     if (action === 'get') return response.status(200).json(await loadParty(db, user.id, input))
+    if (action === 'continue_host') return response.status(200).json(await continueHostPhase(db, user.id, input))
     if (action === 'start') return response.status(200).json(await startParty(db, user.id, input))
     if (action === 'start_countdown') return response.status(200).json(await startQuestionCountdown(db, user.id, input))
     if (action === 'open_question') return response.status(200).json(await openQuestion(db, user.id, input))
