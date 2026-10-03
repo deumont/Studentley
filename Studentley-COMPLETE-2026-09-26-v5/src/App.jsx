@@ -25,9 +25,9 @@ import StudyPartyHome, { StudyPartyRoom } from './pages/StudyParty'
 import ActiveQuizShowRejoin from './components/ActiveQuizShowRejoin'
 
 function Protected({ children }) {
-  const { configured, session, authLoading, profile } = useApp()
+  const { configured, session, authLoading, profile, workspaceLoaded } = useApp()
   const location = useLocation()
-  if (authLoading) return <Loader full label="Loading Studentley…" />
+  if (authLoading || (session && !workspaceLoaded)) return <Loader full shell label="Loading Studentley…" />
   if (!configured || !session) return <Navigate to="/login" replace state={{ from: location }} />
   const loginBypassesOnboarding = sessionStorage.getItem('studentley-login-bypass-onboarding') === session.user.id
   const onboardingRequired = !loginBypassesOnboarding && session.user?.user_metadata?.onboarding_required === true && profile?.onboarding_complete === false

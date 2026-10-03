@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, Award, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Copy, Crown, Flame, Gauge, Library, LoaderCircle, LockKeyhole, Medal, PartyPopper, Plus, RefreshCw, Search, Shield, Sparkles, Swords, Target, Trash2, Trophy, UploadCloud, UserPlus, Users, X, Zap } from 'lucide-react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { Button, EmptyState, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../components/UI'
+import { Button, EmptyState, ErrorState, Field, Loader, Modal, ProfileAvatar, SkeletonGrid } from '../components/UI'
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { generateQuiz } from '../services/ai'
@@ -103,14 +103,15 @@ export default function RivalsDashboard() {
 export function RankedRivals() {
   const navigate = useNavigate()
   const [topics, setTopics] = useState([]), [subject, setSubject] = useState(''), [topicId, setTopicId] = useState(''), [level, setLevel] = useState('GCSE / IGCSE'), [difficulty, setDifficulty] = useState('Exam standard')
-  const [match, setMatch] = useState(null), [loading, setLoading] = useState(false), [error, setError] = useState('')
-  useEffect(() => { document.title = 'Ranked — Studentley Rivals'; loadRivalTopics().then(result => { setTopics(result.topics); const first = result.topics[0]; if (first) { setSubject(first.subject); setTopicId(first.id); setLevel(first.levels.includes('GCSE / IGCSE') ? 'GCSE / IGCSE' : first.levels[0]) } }).catch(problem => setError(problem.message)) }, [])
+  const [match, setMatch] = useState(null), [loading, setLoading] = useState(false), [topicsLoading, setTopicsLoading] = useState(true), [error, setError] = useState('')
+  useEffect(() => { document.title = 'Ranked — Studentley Rivals'; loadRivalTopics().then(result => { setTopics(result.topics); const first = result.topics[0]; if (first) { setSubject(first.subject); setTopicId(first.id); setLevel(first.levels.includes('GCSE / IGCSE') ? 'GCSE / IGCSE' : first.levels[0]) } }).catch(problem => setError(problem.message)).finally(() => setTopicsLoading(false)) }, [])
   const subjects = [...new Set(topics.map(item => item.subject))], availableTopics = topics.filter(item => item.subject === subject), selectedTopic = topics.find(item => item.id === topicId)
   useEffect(() => { if (!availableTopics.some(item => item.id === topicId) && availableTopics[0]) { setTopicId(availableTopics[0].id); setLevel(availableTopics[0].levels.includes(level) ? level : availableTopics[0].levels[0]) } }, [subject, topics])
   useEffect(() => { if (!match || !['waiting','generating'].includes(match.status)) return; const timer = setInterval(() => loadRivalMatch(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), 2500); return () => clearInterval(timer) }, [match?.id, match?.status, navigate])
   useEffect(() => { if (!match || match.status !== 'waiting') return; const timer = setTimeout(() => addPracticeRival(match.id).then(result => { setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) }).catch(problem => setError(problem.message)), practiceRivalWait(match)); return () => clearTimeout(timer) }, [match?.id, match?.status, match?.created_at, navigate])
   const queue = async event => { event.preventDefault(); setLoading(true); setError(''); try { const result = await queueRankedBattle({ topicId, level, difficulty }); setMatch(result.match); if (result.match.status === 'active') navigate(`/rivals/match/${result.match.id}`) } catch (problem) { setError(problem.message) } finally { setLoading(false) } }
   if (match && ['waiting','generating'].includes(match.status)) return <MatchmakingPanel match={match} error={error} onCancel={async () => { await cancelRivalMatch(match.id); setMatch(null) }} />
+  if (topicsLoading) return <Loader label="Loading ranked topics…" />
   return <>
     <div className="rivals-page-heading"><div><span className="rivals-kicker"><Trophy /> Ranked mode</span><h1>Prove what you know.</h1><p>Uploaded documents are never used here. Every matchup comes from Studentley’s standardized topic bank.</p></div><div className="ranked-rules"><b>Correctness first</b><span>Speed breaks ties</span><small>Opponent gets 20 seconds after the first finish</small></div></div>
     {error && (error.includes('migration') ? <SetupRequired error={error} /> : <ErrorState text={error} />)}
@@ -153,7 +154,7 @@ export function RivalQuizLibrary() {
     <div className="rivals-page-heading"><div><span className="rivals-kicker"><Library /> Community quizzes</span><h1>Play what students create.</h1><p>Challenge yourself with public quizzes—or build and publish your own.</p></div><Button className="rivals-primary" onClick={() => setCreating(true)}><Plus /> Create quiz</Button></div>
     {error && (error.includes('migration') ? <SetupRequired error={error} /> : <ErrorState text={error} />)}
     <div className="rivals-library-tools"><div><Search /><input value={search} onChange={event => setSearch(event.target.value)} placeholder="Search quizzes, subjects or creators" /></div><Button variant="ghost" loading={loading} onClick={load}><RefreshCw /> Refresh</Button></div>
-    {filtered.length ? <div className="rivals-quiz-grid">{filtered.map(quiz => <article className="card" key={quiz.id}><div className="quiz-card-top"><span><BookOpen /></span>{quiz.is_mine && <em>Your quiz</em>}</div><small>{quiz.subject} · {quiz.level}</small><h2>{quiz.title}</h2><p>{quiz.description || quiz.topic || 'A community-created Studentley quiz.'}</p><div><span><Users /> {quiz.play_count} plays</span><span>{quiz.items.length} questions</span></div><footer><small>by {quiz.creator_name}</small><Button className="rivals-primary" onClick={() => setPlaying(quiz)}>Play <ArrowRight /></Button></footer></article>)}</div> : !loading && <EmptyState icon={Library} title="No quizzes found" text="Create the first quiz for this search." />}
+    {loading && !quizzes.length ? <SkeletonGrid /> : filtered.length ? <div className="rivals-quiz-grid">{filtered.map(quiz => <article className="card" key={quiz.id}><div className="quiz-card-top"><span><BookOpen /></span>{quiz.is_mine && <em>Your quiz</em>}</div><small>{quiz.subject} · {quiz.level}</small><h2>{quiz.title}</h2><p>{quiz.description || quiz.topic || 'A community-created Studentley quiz.'}</p><div><span><Users /> {quiz.play_count} plays</span><span>{quiz.items.length} questions</span></div><footer><small>by {quiz.creator_name}</small><Button className="rivals-primary" onClick={() => setPlaying(quiz)}>Play <ArrowRight /></Button></footer></article>)}</div> : <EmptyState icon={Library} title="No quizzes found" text="Create the first quiz for this search." />}
   </>
 }
 

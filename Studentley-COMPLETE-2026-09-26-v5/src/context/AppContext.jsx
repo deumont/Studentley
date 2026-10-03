@@ -12,6 +12,7 @@ export function AppProvider({ children }) {
   const [authLoading, setAuthLoading] = useState(true)
   const [data, setData] = useState(null)
   const [loading, setLoading] = useState(false)
+  const [workspaceLoaded, setWorkspaceLoaded] = useState(false)
   const [notice, setNotice] = useState(null)
   const [theme, setTheme] = useState(localStorage.getItem('istudent-theme') || 'system')
   const profile = data?.profiles?.[0]
@@ -33,11 +34,11 @@ export function AppProvider({ children }) {
   }, [navigate])
 
   const refresh = useCallback(async () => {
-    if (!session) { setData(null); return }
+    if (!session) { setData(null); setWorkspaceLoaded(false); return }
     setLoading(true)
     try { setData(await loadWorkspace()) }
     catch (error) { setNotice({ type: 'error', text: error.message || 'Unable to load your workspace.' }) }
-    finally { setLoading(false) }
+    finally { setLoading(false); setWorkspaceLoaded(true) }
   }, [session])
 
   useEffect(() => { refresh() }, [refresh])
@@ -66,12 +67,12 @@ export function AppProvider({ children }) {
   }, [refresh])
 
   const value = useMemo(() => ({
-    configured: isConfigured, session, user: session?.user, authLoading, recoveryMode, data, profile, loading,
+    configured: isConfigured, session, user: session?.user, authLoading, recoveryMode, data, profile, loading, workspaceLoaded,
     refresh, create: (table, payload) => mutate('create', table, payload),
     update: (table, id, changes) => mutate('update', table, id, changes),
     remove: (table, id) => mutate('remove', table, id),
     notice, notify: (text, type = 'success') => setNotice({ text, type }), theme, setTheme,
-  }), [session, authLoading, recoveryMode, data, profile, loading, refresh, mutate, notice, theme])
+  }), [session, authLoading, recoveryMode, data, profile, loading, workspaceLoaded, refresh, mutate, notice, theme])
   return <AppContext.Provider value={value}>{children}</AppContext.Provider>
 }
 

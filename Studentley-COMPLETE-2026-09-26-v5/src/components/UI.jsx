@@ -7,6 +7,19 @@ export function Button({ variant = 'primary', className = '', loading, children,
   return <button className={`button ${variant} ${className}`} disabled={loading || props.disabled} {...props}>{loading && <LoaderCircle className="spin" size={17} />}{children}</button>
 }
 
+export function SkeletonGrid({ count = 6, className = '' }) {
+  return <div className={`skeleton-card-grid ${className}`} aria-hidden="true">
+    {Array.from({ length: count }, (_, index) => <article className="skeleton-card" key={index}>
+      <span className="skeleton-block skeleton-icon" />
+      <span className="skeleton-block skeleton-line short" />
+      <span className="skeleton-block skeleton-line title" />
+      <span className="skeleton-block skeleton-line" />
+      <span className="skeleton-block skeleton-line medium" />
+      <span className="skeleton-block skeleton-button" />
+    </article>)}
+  </div>
+}
+
 export function PageHeading({ eyebrow, title, text, actions }) {
   return <div className="page-heading"><div><span className="eyebrow">{eyebrow}</span><h1>{title}</h1>{text && <p>{text}</p>}</div>{actions && <div className="heading-actions">{actions}</div>}</div>
 }
@@ -39,7 +52,18 @@ export function UpgradeModal({ feature, plan = 'Plus', onClose }) {
   return <Modal title={`${feature} is included with ${plan}`} description="Your free workspace stays fully usable. Upgrade only when the extra personalization is useful to you." onClose={onClose}><div className="upgrade-message"><span className="icon-bubble violet"><Crown /></span><div><strong>Unlock {feature.toLowerCase()}</strong><p>See exactly what each plan includes before making a decision.</p></div></div><Link className="button violet full" to="/plans">View plans</Link></Modal>
 }
 
-export function Loader({ full = false, label = 'Loading…' }) { return <div className={`loader ${full ? 'full-page' : ''}`}><LoaderCircle className="spin" /><span>{label}</span></div> }
+export function Loader({ full = false, label = 'Loading…', shell = false }) {
+  const content = <>
+    <span className="skeleton-status-label">{label}</span>
+    <div className="skeleton-page" aria-hidden="true">
+      <div className="skeleton-heading-row"><div><span className="skeleton-block skeleton-kicker" /><span className="skeleton-block skeleton-page-title" /><span className="skeleton-block skeleton-page-copy" /></div><span className="skeleton-block skeleton-heading-action" /></div>
+      <div className="skeleton-stat-row">{Array.from({ length: 3 }, (_, index) => <span className="skeleton-block skeleton-stat" key={index} />)}</div>
+      <div className="skeleton-panel-row"><div className="skeleton-panel"><span className="skeleton-block skeleton-panel-title" />{Array.from({ length: 5 }, (_, index) => <span className="skeleton-block skeleton-panel-line" key={index} />)}</div><div className="skeleton-panel"><span className="skeleton-block skeleton-panel-title" />{Array.from({ length: 4 }, (_, index) => <span className="skeleton-block skeleton-panel-line" key={index} />)}</div></div>
+    </div>
+  </>
+  if (shell) return <div className="skeleton-shell-loader full-page" role="status" aria-live="polite"><aside className="skeleton-shell-sidebar" aria-hidden="true"><span className="skeleton-block skeleton-brand" />{Array.from({ length: 7 }, (_, index) => <span className="skeleton-block skeleton-nav-item" key={index} />)}<span className="skeleton-block skeleton-sidebar-note" /></aside><main className="skeleton-shell-main"><header aria-hidden="true"><span className="skeleton-block skeleton-topbar-pill" /><span className="skeleton-block skeleton-topbar-avatar" /></header>{content}</main></div>
+  return <div className={`skeleton-loader ${full ? 'full-page' : ''}`} role="status" aria-live="polite">{content}</div>
+}
 export function ErrorState({ text }) { return <div className="error-state"><AlertCircle /><span>{text}</span></div> }
 export function Field({ label, hint, children, className = '' }) { return <label className={`field ${className}`}><span>{label}</span>{children}{hint && <small>{hint}</small>}</label> }
 export function formatDate(value, options = {}) { return new Intl.DateTimeFormat(undefined, { day: 'numeric', month: 'short', year: 'numeric', ...options }).format(new Date(value)) }
