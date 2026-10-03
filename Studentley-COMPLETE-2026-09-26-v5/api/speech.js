@@ -31,8 +31,9 @@ export default async function handler(request, response) {
           voice: quizShow ? (process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx') : (process.env.OPENAI_TTS_VOICE || 'marin'),
           input,
           instructions: quizShow
-            ? 'Use a confident, natural male voice like the main host of a high-energy television quiz show for teenagers. Be warm, witty, dramatic and genuinely excited. Vary rhythm, emphasis and reactions. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use short dramatic pauses before reveals. Keep every line punchy, clear and human, never robotic, monotonous, shouty or overacted.'
+            ? 'Use a confident, natural male voice like the main host of an exciting prime-time television quiz show for teenagers. Sound genuinely thrilled and highly energetic from the first word. Use lively momentum, bright reactions, strong emphasis, varied rhythm and a smiling delivery. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use only very short dramatic pauses before reveals. Keep every line punchy, clear, fast-moving and human, never robotic, monotonous, flat, shouty or overacted.'
             : 'Speak like a warm, calm and encouraging personal tutor. Sound natural and conversational, with gentle expression, clear pronunciation and relaxed pacing. Avoid exaggerated enthusiasm and robotic pauses.',
+          speed: quizShow ? 1.08 : 1,
           response_format: 'mp3',
         }),
       })

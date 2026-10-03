@@ -250,6 +250,12 @@ body.quiz-show-mode{
 .quiz-show-mode .study-party-player-list em,
 .quiz-show-mode .study-party-player-list span small{color:var(--quiz-muted)}
 .quiz-show-mode .study-party-player-list>article>strong{color:var(--quiz-mint)}
+.quiz-show-mode .study-party-scoreboard.round-result .study-party-player-list{isolation:isolate}
+.quiz-show-mode .study-party-scoreboard.round-result .study-party-player-list article.rank-up{z-index:4;animation:quiz-rank-swap-up 1.15s cubic-bezier(.18,.85,.2,1.05) both}
+.quiz-show-mode .study-party-scoreboard.round-result .study-party-player-list article.rank-down{z-index:2;animation:quiz-rank-swap-down 1.15s cubic-bezier(.18,.85,.2,1.05) both}
+.quiz-show-mode .study-party-animated-score{min-width:42px;color:var(--quiz-mint);font-size:1.02rem;font-variant-numeric:tabular-nums;text-align:right}
+.quiz-show-mode .study-party-animated-score.counting-up{animation:quiz-score-count-up 1.45s ease-out both}
+.quiz-show-mode .study-party-animated-score.counting-down{color:#ff9aaa;animation:quiz-score-count-down 1.25s ease-out both}
 .quiz-show-mode .study-party-question{background:linear-gradient(155deg,rgba(13,45,34,.97),rgba(5,25,19,.98));color:var(--quiz-ink)}
 .quiz-show-mode .study-party-question-top>span{background:rgba(44,144,102,.24);color:var(--quiz-mint)}
 .quiz-show-mode .study-party-question-top>time{background:rgba(255,255,255,.08);color:var(--quiz-ink)}
@@ -277,6 +283,7 @@ body.quiz-show-mode{
 .quiz-show-mode .study-party-reveal{border-color:var(--quiz-line);background:rgba(30,101,72,.25);color:var(--quiz-ink)}
 .quiz-show-mode .study-party-reveal>svg,
 .quiz-show-mode .study-party-reveal small{color:var(--quiz-mint)}
+.quiz-show-mode .study-party-reveal b{color:var(--quiz-ink)}
 .quiz-show-mode .study-party-reveal p{color:var(--quiz-muted)}
 .quiz-show-mode .study-party-team-scores span{background:rgba(255,255,255,.06)}
 .quiz-show-mode .study-party-team-scores small{color:var(--quiz-muted)}
@@ -293,6 +300,8 @@ body.quiz-show-mode{
 .quiz-show-mode .study-party-personal-result.correct>span{background:rgba(79,220,156,.18)}
 .quiz-show-mode .study-party-personal-result.wrong{border-color:rgba(255,110,127,.36);background:rgba(171,39,61,.2);color:#ffadb8}
 .quiz-show-mode .study-party-personal-result.wrong>span{background:rgba(237,75,96,.17)}
+.quiz-show-mode .study-party-personal-result b,
+.quiz-show-mode .study-party-personal-result small{color:inherit}
 .quiz-show-mode .study-party-swap-notice,
 .quiz-show-mode .study-party-swap-result{border-color:rgba(202,151,255,.35);background:linear-gradient(115deg,rgba(111,44,161,.24),rgba(61,35,14,.15));color:#ddb4ff}
 .quiz-show-mode .study-party-swap-notice small,
@@ -317,3 +326,25 @@ body.quiz-show-mode{
 .quiz-show-mode .study-party-final-grid article>div small,
 .quiz-show-mode .study-party-final-grid p{color:var(--quiz-muted)}
 .quiz-show-mode .study-party-final-grid p strong{color:var(--quiz-ink)}
+@keyframes quiz-rank-swap-up{0%{transform:translateY(var(--rank-shift));box-shadow:none;filter:brightness(.86)}45%{transform:translateY(-7px) scale(1.025);box-shadow:0 13px 34px rgba(36,228,145,.25);background:rgba(45,151,105,.32)}100%{transform:translateY(0);box-shadow:none;filter:brightness(1)}}
+@keyframes quiz-rank-swap-down{0%{transform:translateY(var(--rank-shift));opacity:.82}55%{transform:translateY(5px);opacity:.9}100%{transform:translateY(0);opacity:1}}
+@keyframes quiz-score-count-up{0%{transform:scale(.72);color:#fff}38%{transform:scale(1.35);color:#fff176;text-shadow:0 0 22px rgba(255,230,75,.8)}100%{transform:scale(1);color:var(--quiz-mint);text-shadow:none}}
+@keyframes quiz-score-count-down{0%{transform:scale(.8)}38%{transform:scale(1.2);text-shadow:0 0 18px rgba(255,90,112,.55)}100%{transform:scale(1);text-shadow:none}}
+
+/* The server holds the result phase long enough for this exact target spin to finish. */
+.quiz-show-mode .study-party-wheel-stage{position:relative}
+.quiz-show-mode .study-party-wheel-stage.spinning .study-party-wheel{animation:party-wheel-spin-exact 4.8s cubic-bezier(.08,.74,.1,1) forwards}
+.quiz-show-mode .study-party-wheel-stage.result .study-party-wheel{animation:none;transform:rotate(var(--wheel-stop))}
+.study-party-wheel-win{position:absolute;inset:0;z-index:8;display:flex;align-items:center;justify-content:center;flex-direction:column;pointer-events:none;background:radial-gradient(circle,rgba(255,224,88,.28),rgba(14,77,54,.14) 35%,transparent 66%);animation:quiz-wheel-win-overlay 2.7s ease-out forwards}
+.study-party-wheel-win>svg{width:78px;height:78px;color:#fff176;filter:drop-shadow(0 0 20px rgba(255,225,76,.9));animation:quiz-wheel-trophy-pop 1.1s cubic-bezier(.16,.9,.2,1.25) both}
+.study-party-wheel-win>strong{color:#fff;font:950 clamp(4rem,12vw,8.5rem)/.9 'Plus Jakarta Sans';letter-spacing:-.07em;text-shadow:0 0 20px rgba(255,211,46,.8),0 8px 35px rgba(0,0,0,.35);animation:quiz-wheel-points-pop 1.3s cubic-bezier(.16,.9,.2,1.2) .08s both}
+.study-party-wheel-win>span{margin-top:10px;color:#fff176;font:950 clamp(1rem,3vw,1.8rem) 'Plus Jakarta Sans';letter-spacing:.28em;text-shadow:0 3px 14px rgba(0,0,0,.4);animation:quiz-wheel-points-pop 1.25s cubic-bezier(.16,.9,.2,1.2) .18s both}
+.study-party-wheel-win>div{position:absolute;inset:0;overflow:hidden}
+.study-party-wheel-win>div i{position:absolute;left:50%;top:50%;width:11px;height:28px;border-radius:4px;background:#ffe65d;opacity:0;animation:quiz-wheel-confetti 1.9s ease-out var(--spark-delay) both;transform:rotate(var(--spark-angle)) translateY(-35px)}
+.study-party-wheel-win>div i:nth-child(3n+2){background:#67f2b8;width:9px;height:22px}
+.study-party-wheel-win>div i:nth-child(3n){background:#74a8ff;width:13px;height:13px;border-radius:50%}
+@keyframes party-wheel-spin-exact{0%{transform:rotate(0)}66%{transform:rotate(calc(var(--wheel-stop) - 140deg))}86%{transform:rotate(calc(var(--wheel-stop) + 22deg))}100%{transform:rotate(var(--wheel-stop))}}
+@keyframes quiz-wheel-win-overlay{0%{opacity:0}12%,68%{opacity:1}100%{opacity:0;visibility:hidden}}
+@keyframes quiz-wheel-trophy-pop{0%{opacity:0;transform:translateY(35px) scale(.2) rotate(-18deg)}55%{opacity:1;transform:translateY(0) scale(1.2) rotate(7deg)}100%{opacity:1;transform:scale(1) rotate(0)}}
+@keyframes quiz-wheel-points-pop{0%{opacity:0;transform:scale(.2)}58%{opacity:1;transform:scale(1.18)}100%{opacity:1;transform:scale(1)}}
+@keyframes quiz-wheel-confetti{0%{opacity:0;transform:rotate(var(--spark-angle)) translateY(-35px) rotate(0)}18%{opacity:1}100%{opacity:0;transform:rotate(var(--spark-angle)) translateY(-260px) rotate(680deg)}}
