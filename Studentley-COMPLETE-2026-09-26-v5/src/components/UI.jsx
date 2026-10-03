@@ -64,6 +64,27 @@ export function ProfileAvatar({ user, name = 'Student', className = '', path: ex
   return <span className={`avatar ${url ? 'has-image' : ''} ${className}`}>{url ? <img src={url} alt={`${name}'s profile`} /> : initials}</span>
 }
 
+export function LeaderboardPodium({ entries = [], tone = 'league' }) {
+  return <div className={`leaderboard-podium ${tone}`}>
+    <span className="podium-orbit orbit-one" aria-hidden="true" /><span className="podium-orbit orbit-two" aria-hidden="true" />
+    {entries.slice(0, 3).map((entry, index) => {
+      const position = Number(entry.position || index + 1)
+      const PlanIcon = entry.badge === 'pro' ? Crown : Sparkles
+      return <article className={`podium-contender place-${position} ${entry.isCurrent ? 'current' : ''}`} key={entry.id || `${position}-${entry.name}`}>
+        <div className="podium-person">
+          {position === 1 && <span className="podium-winner-crown"><Crown /></span>}
+          <ProfileAvatar name={entry.name} path={entry.path || ''} bucket={entry.bucket} className="podium-avatar" />
+          <b>{entry.name}{entry.isCurrent && <em>You</em>}</b>
+          {entry.badge && <span className={`podium-badge ${entry.badge}`} style={entry.badgeColor ? { '--podium-badge': entry.badgeColor } : undefined}>{tone === 'league' && ['plus', 'pro'].includes(entry.badge) && <PlanIcon />}{entry.badge}</span>}
+          <span className="podium-score">{entry.score} <small>{entry.suffix}</small></span>
+          {entry.detail && <small className="podium-detail">{entry.detail}</small>}
+        </div>
+        <div className="podium-step"><strong>{position}</strong></div>
+      </article>
+    })}
+  </div>
+}
+
 export function Modal({ title, description, onClose, children, wide = false }) {
   useEffect(() => { const close = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', close); return () => document.removeEventListener('keydown', close) }, [onClose])
   return <div className="modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label="Close"><X /></button><h2 id="modal-title">{title}</h2>{description && <p className="muted">{description}</p>}{children}</section></div>
