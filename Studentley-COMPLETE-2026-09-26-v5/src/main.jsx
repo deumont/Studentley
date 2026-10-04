@@ -4,6 +4,7 @@ import { BrowserRouter } from 'react-router-dom'
 import { AppProvider } from './context/AppContext'
 import App from './App'
 import './styles.css'
+import './home.css'
 import './public.css'
 import './brand.css'
 

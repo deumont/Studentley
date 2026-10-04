@@ -1,5 +1,5 @@
-import React, { useMemo, useState } from 'react'
-import { ArrowRight, CalendarDays, CheckCircle2, FileText, Flame, GraduationCap, Lightbulb, ListTodo, Sparkles, Target } from 'lucide-react'
+import React, { useMemo } from 'react'
+import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, FileText, Flame, GraduationCap, Lightbulb, ListTodo, Play, Sparkles, Target, Trophy } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { Button, EmptyState, Loader, formatDate, greeting } from '../components/UI'
@@ -14,7 +14,8 @@ export default function Home() {
   const todayTasks = tasks.filter(item => !item.completed_at && isToday(item.due_at))
   const todaySessions = sessions.filter(item => isToday(item.starts_at)).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
   const completedToday = todaySessions.filter(item => item.completed_at).length
-  const progress = todaySessions.length ? Math.round(completedToday / todaySessions.length * 100) : null
+  const progress = todaySessions.length ? Math.round(completedToday / todaySessions.length * 100) : 0
+  const nextSession = todaySessions.find(item => !item.completed_at)
   const upcomingExams = exams.filter(item => !item.completed_at && future(item.exam_at)).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at)).slice(0, 4)
   const streak = useMemo(() => {
     const completed = [...sessions.map(item => item.completed_at), ...practiceResults.map(item => item.completed_at)].filter(Boolean)
@@ -26,30 +27,96 @@ export default function Home() {
     return count
   }, [sessions, practiceResults])
   if (loading && !data) return <Loader variant="dashboard" label="Loading your dashboard…" />
+
   const name = profile?.display_name?.split(' ')[0] || 'there'
-  const copy = {
-    greeting: greeting(), ready: 'Your day is ready when you are.', shape: 'Let’s shape a focused day together.', tasks: 'Today’s tasks', due: 'due today', progress: 'Study progress', plan: 'plan a session', todayPlan: 'of today’s plan', streak: 'Study streak', day: 'day', days: 'days', complete: 'complete a session', schedule: 'Today’s schedule', viewPlan: 'View plan', nothing: 'Nothing planned today', addSession: 'Add a study session when you’re ready.', planSession: 'Plan a session', exams: 'Upcoming exams', viewAll: 'View all', noExams: 'No exams yet', addExamText: 'Add an exam manually or upload your exam schedule.', addExam: 'Add exam', quick: 'Quick actions', upload: 'Upload document', uploadSub: 'Notes, PDFs, images and more', visualGuide: 'Generate a visual guide', visualGuideSub: 'Explain a topic with pictures and graphs', examSub: 'Track a real upcoming assessment', left: 'days left', today: 'Today', reopened: 'Study session reopened.', completed: 'Study session completed.'
+  const dayLabel = formatDate(new Date(), { weekday: 'long', month: 'long', day: 'numeric' })
+  const completeSession = async session => {
+    await update('study_sessions', session.id, { completed_at: session.completed_at ? null : new Date().toISOString() })
+    notify(session.completed_at ? 'Study session reopened.' : 'Study session completed.')
   }
-  const completeSession = async session => { await update('study_sessions', session.id, { completed_at: session.completed_at ? null : new Date().toISOString() }); notify(session.completed_at ? copy.reopened : copy.completed) }
-  return <>
-    <div className="dashboard-greeting"><div><h1>{copy.greeting}, {name}</h1><p>{todayTasks.length || todaySessions.length ? copy.ready : copy.shape}</p></div><time><CalendarDays />{formatDate(new Date(), { weekday: 'short' })}</time></div>
-    <section className="metric-row">
-      <Metric tone="blue" icon={ListTodo} label={copy.tasks} value={todayTasks.length} hint={copy.due} />
-      <Metric tone="green" icon={Target} label={copy.progress} value={progress === null ? '—' : `${progress}%`} hint={progress === null ? copy.plan : copy.todayPlan} />
-      <Metric tone="violet" icon={Flame} label={copy.streak} value={streak || '—'} hint={streak ? (streak === 1 ? copy.day : copy.days) : copy.complete} />
+
+  return <div className="home-dashboard">
+    <section className="home-command" aria-labelledby="home-title">
+      <div className="home-command-copy">
+        <span className="home-eyebrow"><Sparkles /> {dayLabel}</span>
+        <h1 id="home-title"><span>{greeting()}, {name}.</span> What’s your next move?</h1>
+        <p>{todayTasks.length || todaySessions.length ? 'Your plan is ready. Pick up where you left off or create something new.' : 'A clear day is a blank canvas. Start with a document, a topic or an upcoming exam.'}</p>
+        <div className="home-command-actions">
+          <button className="home-primary-action" onClick={() => navigate(nextSession ? '/study-plan' : '/practice')}>
+            <span><Play /></span>
+            <span><small>{nextSession ? 'CONTINUE TODAY' : 'START STUDYING'}</small><b>{nextSession?.title || 'Build a practice set'}</b></span>
+            <ArrowUpRight />
+          </button>
+          <button className="home-secondary-action" onClick={() => navigate('/upload')}><FileText /> Upload material</button>
+        </div>
+      </div>
+
+      <div className="home-progress-stage" aria-label={`${progress}% of today's sessions complete`}>
+        <span className="home-orbit orbit-one" /><span className="home-orbit orbit-two" />
+        <div className="home-progress-ring" style={{ '--home-progress': `${progress * 3.6}deg` }}>
+          <div><small>TODAY</small><strong>{progress}%</strong><span>{todaySessions.length ? `${completedToday} of ${todaySessions.length} sessions` : 'Ready to begin'}</span></div>
+        </div>
+        <div className="home-stage-chip chip-top"><Target /><span><small>FOCUS</small><b>{nextSession?.subjects?.name || 'Choose a subject'}</b></span></div>
+        <div className="home-stage-chip chip-bottom"><Clock3 /><span><small>NEXT UP</small><b>{nextSession ? new Date(nextSession.starts_at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : 'Whenever you’re ready'}</b></span></div>
+      </div>
     </section>
-    <div className="dashboard-grid">
-      <section className="card dashboard-card"><CardHeader icon={CalendarDays} title={copy.schedule} action={copy.viewPlan} onClick={() => navigate('/study-plan')} />{todaySessions.length ? <div className="rows">{todaySessions.map(item => <button className={`schedule-item ${item.completed_at ? 'done' : ''}`} onClick={() => completeSession(item)} key={item.id}><span className="color-dot" style={{ background: item.subjects?.color || '#2692f5' }} /><span><small>{new Date(item.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</small><b>{item.title}</b><em>{item.subjects?.name || 'Study session'}</em></span><CheckCircle2 /></button>)}</div> : <EmptyState compact icon={CalendarDays} title={copy.nothing} text={copy.addSession}><Button variant="secondary" onClick={() => navigate('/study-plan')}>{copy.planSession}</Button></EmptyState>}</section>
-      <section className="card dashboard-card"><CardHeader icon={GraduationCap} title={copy.exams} action={copy.viewAll} onClick={() => navigate('/practice')} />{upcomingExams.length ? <div className="rows">{upcomingExams.map(item => { const days = Math.ceil((new Date(item.exam_at) - new Date()) / 86400000); return <div className="exam-item" key={item.id}><time><b>{new Date(item.exam_at).getDate()}</b><small>{new Date(item.exam_at).toLocaleString([], { month: 'short' })}</small></time><span><b>{item.title}</b><small>{item.subjects?.name || 'No subject'}</small></span><em>{days === 0 ? copy.today : `${days} day${days === 1 ? '' : 's'} left`}</em></div> })}</div> : <EmptyState compact icon={GraduationCap} title={copy.noExams} text={copy.addExamText}><Button variant="secondary" onClick={() => navigate('/practice')}>{copy.addExam}</Button></EmptyState>}</section>
-      <section className="card dashboard-card actions-card"><CardHeader icon={Sparkles} title={copy.quick} />
-        <Quick tone="blue" icon={FileText} title={copy.upload} sub={copy.uploadSub} onClick={() => navigate('/upload')} />
-        <Quick tone="green" icon={Lightbulb} title={copy.visualGuide} sub={copy.visualGuideSub} onClick={() => navigate('/practice', { state: { openPracticeTab: 'visuals', openPracticeGenerator: 'visual' } })} />
-        <Quick tone="orange" icon={GraduationCap} title={copy.addExam} sub={copy.examSub} onClick={() => navigate('/practice')} />
+
+    <section className="home-stat-strip" aria-label="Today at a glance">
+      <Metric tone="blue" icon={ListTodo} label="Tasks due" value={todayTasks.length} hint="today" />
+      <Metric tone="green" icon={Target} label="Daily progress" value={`${progress}%`} hint={todaySessions.length ? 'of your plan' : 'plan a session'} />
+      <Metric tone="orange" icon={Flame} label="Study streak" value={streak || '—'} hint={streak === 1 ? 'day' : streak ? 'days' : 'complete a session'} />
+      <Metric tone="violet" icon={Trophy} label="Practice runs" value={practiceResults.length} hint="completed" />
+    </section>
+
+    <section className="home-section-heading">
+      <div><span>YOUR DAY</span><h2>Everything that matters, in one view.</h2></div>
+      <button onClick={() => navigate('/study-plan')}>Open full plan <ArrowRight /></button>
+    </section>
+
+    <div className="home-bento">
+      <section className="card home-panel home-today-panel">
+        <PanelHeader index="01" icon={CalendarDays} title="Today’s timeline" meta={`${todaySessions.length} session${todaySessions.length === 1 ? '' : 's'}`} />
+        {todaySessions.length ? <div className="home-timeline">{todaySessions.map((item, index) => <button className={`home-session ${item.completed_at ? 'done' : ''}`} onClick={() => completeSession(item)} key={item.id} style={{ '--item-index': index }}>
+          <time>{new Date(item.starts_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>
+          <span className="home-session-line"><i style={{ background: item.subjects?.color || '#2692f5' }} /></span>
+          <span className="home-session-copy"><small>{item.subjects?.name || 'Study session'}</small><b>{item.title}</b></span>
+          <span className="home-session-status">{item.completed_at ? <CheckCircle2 /> : <ArrowUpRight />}</span>
+        </button>)}</div> : <EmptyState compact icon={CalendarDays} title="Your timeline is open" text="Add a study session and give the day a little structure."><Button variant="secondary" onClick={() => navigate('/study-plan')}>Plan a session</Button></EmptyState>}
+      </section>
+
+      <section className="card home-panel home-exam-panel">
+        <PanelHeader index="02" icon={GraduationCap} title="Exam radar" meta="Next up" />
+        {upcomingExams.length ? <div className="home-exam-list">{upcomingExams.map((item, index) => {
+          const days = Math.ceil((new Date(item.exam_at) - new Date()) / 86400000)
+          return <article key={item.id} style={{ '--item-index': index }}>
+            <time><strong>{days === 0 ? 'TODAY' : days}</strong><small>{days === 0 ? 'GO TIME' : `DAY${days === 1 ? '' : 'S'}`}</small></time>
+            <span><small>{item.subjects?.name || 'No subject'}</small><b>{item.title}</b></span>
+            <i style={{ '--exam-progress': `${Math.max(8, 100 - Math.min(days, 30) / 30 * 100)}%` }} />
+          </article>
+        })}</div> : <EmptyState compact icon={GraduationCap} title="No exams on the radar" text="Add your next assessment and turn the countdown into a plan."><Button variant="secondary" onClick={() => navigate('/practice')}>Add exam</Button></EmptyState>}
+        <button className="home-panel-link" onClick={() => navigate('/practice')}>View exams <ArrowRight /></button>
+      </section>
+
+      <section className="home-launch-panel">
+        <header><div><span>03 / QUICK LAUNCH</span><h2>Turn an idea into study material.</h2></div><Sparkles /></header>
+        <div className="home-launch-grid">
+          <Quick tone="blue" icon={FileText} index="A" title="Upload a document" sub="Notes, PDFs, images and more" onClick={() => navigate('/upload')} />
+          <Quick tone="green" icon={Lightbulb} index="B" title="Generate a visual guide" sub="Explain a topic with pictures and graphs" onClick={() => navigate('/practice', { state: { openPracticeTab: 'visuals', openPracticeGenerator: 'visual' } })} />
+          <Quick tone="orange" icon={GraduationCap} index="C" title="Create an exam" sub="Generate a paper for your exact level" onClick={() => navigate('/practice')} />
+        </div>
       </section>
     </div>
-  </>
+  </div>
 }
 
-function Metric({ tone, icon: Icon, label, value, hint }) { return <article className={`metric ${tone}`}><span className="icon-bubble"><Icon /></span><b>{label}</b><strong>{value}</strong><small>{hint}</small></article> }
-function CardHeader({ icon: Icon, title, action, onClick }) { return <header className="card-header"><span className="icon-bubble blue"><Icon /></span><h2>{title}</h2>{action && <button onClick={onClick}>{action} <ArrowRight /></button>}</header> }
-function Quick({ tone, icon: Icon, title, sub, onClick }) { return <button className={`quick-action ${tone}`} onClick={onClick}><span className="icon-bubble"><Icon /></span><span><b>{title}</b><small>{sub}</small></span><ArrowRight /></button> }
+function Metric({ tone, icon: Icon, label, value, hint }) {
+  return <article className={`home-metric ${tone}`}><span><Icon /></span><div><small>{label}</small><strong>{value}</strong><em>{hint}</em></div></article>
+}
+
+function PanelHeader({ index, icon: Icon, title, meta }) {
+  return <header className="home-panel-header"><span className="home-panel-index">{index}</span><span className="home-panel-icon"><Icon /></span><div><small>{meta}</small><h2>{title}</h2></div></header>
+}
+
+function Quick({ tone, icon: Icon, index, title, sub, onClick }) {
+  return <button className={`home-launch-card ${tone}`} onClick={onClick}><span className="home-launch-index">{index}</span><span className="home-launch-icon"><Icon /></span><span><b>{title}</b><small>{sub}</small></span><ArrowUpRight /></button>
+}
