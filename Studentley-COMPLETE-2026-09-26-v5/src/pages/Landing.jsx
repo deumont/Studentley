@@ -63,10 +63,8 @@ export default function Landing() {
     if (!reducedMotion && 'IntersectionObserver' in window) {
       root.classList.add('scroll-reveal-ready')
       observer = new IntersectionObserver(entries => entries.forEach(entry => {
-        if (!entry.isIntersecting) return
-        entry.target.classList.add('is-visible')
-        observer.unobserve(entry.target)
-      }), { threshold: 0.13, rootMargin: '0px 0px -55px' })
+        entry.target.classList.toggle('is-visible', entry.isIntersecting)
+      }), { threshold: 0.1, rootMargin: '-5% 0px -8% 0px' })
       items.forEach(item => observer.observe(item))
     } else {
       items.forEach(item => item.classList.add('is-visible'))
@@ -82,7 +80,10 @@ export default function Landing() {
     let scrollFrame
     const updateNavigation = () => {
       const currentScrollY = window.scrollY
+      const scrollingDown = currentScrollY > lastScrollY
       document.body.classList.toggle('home-nav-scrolled', currentScrollY > 24)
+      document.body.classList.toggle('home-scroll-down', scrollingDown && currentScrollY > 24)
+      document.body.classList.toggle('home-scroll-up', !scrollingDown && currentScrollY > 24)
       if (currentScrollY <= 24) document.body.classList.remove('home-nav-hidden')
       else if (currentScrollY > lastScrollY && currentScrollY > 110) document.body.classList.add('home-nav-hidden')
       else if (currentScrollY < lastScrollY) document.body.classList.remove('home-nav-hidden')
@@ -102,7 +103,7 @@ export default function Landing() {
       window.removeEventListener('scroll', handleScroll)
       if (scrollFrame) window.cancelAnimationFrame(scrollFrame)
       document.body.classList.remove('studentley-home-live')
-      document.body.classList.remove('home-nav-hidden', 'home-nav-scrolled')
+      document.body.classList.remove('home-nav-hidden', 'home-nav-scrolled', 'home-scroll-down', 'home-scroll-up')
       root.classList.remove('scroll-reveal-ready')
     }
   }, [])
@@ -176,7 +177,7 @@ export default function Landing() {
         </div>
         <ExamPreview />
       </div>
-      <div className="sl-feature-strip"><span>MULTI-PAGE PDF</span><span>VARIED QUESTIONS</span><span>MARK SCHEME</span><span>AI MARKING</span></div>
+      <div className="sl-feature-strip" data-reveal><span>MULTI-PAGE PDF</span><span>VARIED QUESTIONS</span><span>MARK SCHEME</span><span>AI MARKING</span></div>
     </section>
 
     <section className="sl-feature sl-rivals-section" id="competitive-studying">
