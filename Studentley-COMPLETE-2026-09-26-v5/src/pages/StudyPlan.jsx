@@ -43,7 +43,7 @@ export default function StudyPlan() {
         const result = await generateExplanation({ documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, topic: session.title })
         setExplanation({ title: session.title, source: sources.map(item => item.name).join(' · '), ...result })
       } else {
-        const input = { documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, topic: session.title, difficulty: 'Medium', count: action === 'quiz' ? 8 : 15 }
+        const input = { documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, topic: session.title, difficulty: 'Medium', count: action === 'quiz' ? 8 : 15, ...(action === 'flashcards' ? { flashcardMode: 'definition' } : {}) }
         const result = action === 'quiz' ? await generateQuiz(input) : await generateFlashcards(input)
         await refresh()
         notify(action === 'quiz' ? 'Quiz generated from your study material.' : 'Flashcards generated from your study material.')
