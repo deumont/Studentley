@@ -109,9 +109,12 @@ function RouteTransition({ pathname }) {
       <aside><span className="route-build-logo" />{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</aside>
       <main>
         <header><span /><i /><i /></header>
-        <section className="route-build-hero"><div><i /><b /><b /><em /></div><span /></section>
-        <section className="route-build-metrics">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</section>
-        <section className="route-build-panels"><i /><i /></section>
+        <div className="route-build-page">
+          <section className="route-build-hero"><div><i /><b /><b /><em /></div><span /></section>
+          <section className="route-build-metrics">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</section>
+          <span className="route-build-section-heading" />
+          <section className="route-build-panels"><i /><i /></section>
+        </div>
       </main>
     </div>}
     <div className="route-transition-status">
