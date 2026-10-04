@@ -93,8 +93,10 @@ function RouteTransition({ pathname }) {
   useLayoutEffect(() => {
     const previous = previousPath.current
     previousPath.current = pathname
-    const betweenHomeAndDashboard = (previous === '/' && pathname === '/app') || (previous === '/app' && pathname === '/')
-    if (!betweenHomeAndDashboard) { setDestination(null); return undefined }
+    const publicHandoff = previous === '/' || previous === '/plans'
+    const returningToPublic = pathname === '/' || pathname === '/plans'
+    const betweenPublicAndDashboard = (publicHandoff && pathname === '/app') || (previous === '/app' && returningToPublic)
+    if (!betweenPublicAndDashboard) { setDestination(null); return undefined }
     setDestination(pathname === '/app' ? 'dashboard' : 'home')
     const timer = window.setTimeout(() => setDestination(null), 760)
     return () => window.clearTimeout(timer)
