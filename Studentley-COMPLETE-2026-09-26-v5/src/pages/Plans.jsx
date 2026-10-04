@@ -1,9 +1,10 @@
-import React, { useEffect, useState } from 'react'
-import { Check, Crown, Rocket, ShieldCheck, Sparkles, Sprout } from 'lucide-react'
-import { useNavigate, useSearchParams } from 'react-router-dom'
+import React, { useEffect, useRef, useState } from 'react'
+import { ArrowRight, Check, CreditCard, FileCheck2, Gauge, Rocket, ShieldCheck, Sparkles, Sprout, Trophy, UploadCloud, Zap } from 'lucide-react'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import PublicLayout from '../components/PublicLayout'
 import { useApp } from '../context/AppContext'
 import { Button } from '../components/UI'
+import usePublicPageMotion from '../lib/usePublicPageMotion'
 
 const plans = [
   { id: 'free', name: 'Free', price: '€0', icon: Sprout, text: 'Start with the essentials and build a study rhythm around your real week.', features: ['3 document uploads per week', '1 personalized mock exam per week', '5 AI quizzes per week', 'Basic study plan', 'Flashcards', 'Basic progress', 'Basic practice'], note: 'No study reminders' },
@@ -12,6 +13,8 @@ const plans = [
 ]
 
 export default function Plans() {
+  const pageRef = useRef(null)
+  usePublicPageMotion(pageRef, 'studentley-plans-page')
   const { profile, session, notify, refresh, data } = useApp()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
@@ -69,5 +72,80 @@ export default function Plans() {
     if (hasManagedSubscription) return plan.id === current ? 'Manage billing' : plan.id === 'free' ? 'Manage or cancel plan' : `Switch to ${plan.name}`
     return plan.id === current ? 'Current plan' : plan.id === 'free' ? 'Included free plan' : `Choose ${plan.name}`
   }
-  return <PublicLayout><main className="public-plans"><section className="plans-hero public-container"><span className="public-pill"><Crown /> Simple, transparent plans</span><h1>Choose the space you need to study your way.</h1><p>Start free. Upgrade when you need more uploads, practice and personalization.</p></section><section className="public-container"><div className="plans-grid public-pricing">{plans.map(plan => { const Icon = plan.icon; return <article className={`pricing-card ${plan.id} ${plan.popular ? 'popular' : ''}`} key={plan.id}>{plan.popular && <span className="popular-badge">Most popular</span>}<span className="plan-icon"><Icon /></span><h2>{plan.name}</h2><p>{plan.text}</p><h3>{plan.price}<small>{plan.id === 'free' ? '' : '/month'}</small></h3><Button className="full" variant={plan.id === 'pro' ? 'violet' : 'primary'} disabled={Boolean(session) && current === 'free' && !hasManagedSubscription && plan.id === 'free'} loading={loading === plan.id || (loading === 'billing' && (current !== 'free' || hasManagedSubscription))} onClick={() => choose(plan.id)}>{buttonText(plan)}</Button><ul>{plan.features.map(feature => <li key={feature}><Check /><span>{feature}</span></li>)}</ul><div className="plan-note"><ShieldCheck /> {plan.note}</div></article>})}</div><div className="pricing-honesty"><Sparkles /><div><b>Secure billing, clear limits.</b><p>Stripe handles checkout, invoices, payment methods, plan changes, and cancellation. AI requests are authenticated and processed through the secure server endpoint.</p></div></div></section></main></PublicLayout>
+  return <PublicLayout><main className="editorial-page plans-editorial" ref={pageRef}>
+    <section className="editorial-hero plans-editorial-hero">
+      <div className="editorial-contours" aria-hidden="true"><i /><i /><i /><i /></div>
+      <div className="editorial-hero-copy">
+        <span className="sl-kicker"><Sparkles /> Simple plans. Serious studying.</span>
+        <h1><span>START FREE.</span><span>MOVE UP</span><span className="outline">WHEN READY.</span></h1>
+        <p>Every plan includes the core Studentley experience. Upgrade for more exams, more uploads and more room to keep momentum going.</p>
+        <a className="sl-text-link" href="#choose-plan">Compare the plans <ArrowRight /></a>
+      </div>
+      <PlanHeroVisual />
+    </section>
+
+    <div className="editorial-page-marquee plans-marquee" aria-hidden="true"><div><span>FREE TO START <i>✦</i> CANCEL ANYTIME <i>✦</i> PRICES INCLUDE TAX <i>✦</i> SECURE STRIPE CHECKOUT <i>✦</i> FREE TO START <i>✦</i> CANCEL ANYTIME <i>✦</i> PRICES INCLUDE TAX <i>✦</i> SECURE STRIPE CHECKOUT <i>✦</i></span><span>FREE TO START <i>✦</i> CANCEL ANYTIME <i>✦</i> PRICES INCLUDE TAX <i>✦</i> SECURE STRIPE CHECKOUT <i>✦</i> FREE TO START <i>✦</i> CANCEL ANYTIME <i>✦</i> PRICES INCLUDE TAX <i>✦</i> SECURE STRIPE CHECKOUT <i>✦</i></span></div></div>
+
+    <section className="plans-choice-section" id="choose-plan">
+      <div className="editorial-wrap">
+        <header className="editorial-section-heading plans-heading" data-reveal>
+          <span className="sl-kicker dark"><Gauge /> Choose your level</span>
+          <h2>Pick the amount of momentum you need.</h2>
+          <p>Start with Free. Plus is built for a consistent weekly rhythm. Pro removes the limits for students who want the complete experience.</p>
+        </header>
+        <div className="editorial-pricing-grid">
+          {plans.map((plan, index) => {
+            const Icon = plan.icon
+            return <article className={`pricing-card editorial-plan-card ${plan.id} ${plan.popular ? 'popular' : ''}`} data-reveal key={plan.id} style={{ '--plan-delay': `${index * 90}ms` }}>
+              <header><small>0{index + 1}</small>{plan.popular && <span className="popular-badge">Most popular</span>}<i><Icon /></i></header>
+              <div className="editorial-plan-name"><h2>{plan.name}</h2><p>{plan.text}</p></div>
+              <div className="editorial-price"><strong>{plan.price}</strong><span>{plan.id === 'free' ? 'forever' : 'per month'}<small>{plan.id === 'free' ? 'No card required' : 'Taxes included'}</small></span></div>
+              <Button className="full" variant={plan.id === 'pro' ? 'violet' : 'primary'} disabled={Boolean(session) && current === 'free' && !hasManagedSubscription && plan.id === 'free'} loading={loading === plan.id || (loading === 'billing' && (current !== 'free' || hasManagedSubscription))} onClick={() => choose(plan.id)}>{buttonText(plan)} <ArrowRight /></Button>
+              <div className="plan-includes"><small>WHAT&apos;S INCLUDED</small><ul>{plan.features.map(feature => <li key={feature}><Check /><span>{feature}</span></li>)}</ul></div>
+              <div className="plan-note"><ShieldCheck /> {plan.note}</div>
+            </article>
+          })}
+        </div>
+      </div>
+    </section>
+
+    <section className="plans-comparison-section">
+      <div className="editorial-wrap">
+        <header className="editorial-section-heading split" data-reveal><div><span className="sl-kicker"><FileCheck2 /> Compare every limit</span><h2>Know exactly what changes.</h2></div><p>No hidden bundles. Choose based on how often you want to upload, generate and practise.</p></header>
+        <div className="plans-comparison-table" data-reveal>
+          <div className="comparison-head"><b>FEATURE</b><b>FREE</b><b>PLUS</b><b>PRO</b></div>
+          <ComparisonRow icon={UploadCloud} label="Document uploads" free="3 / week" plus="7 / week" pro="Unlimited" />
+          <ComparisonRow icon={FileCheck2} label="Mock exams" free="1 / week" plus="5 / week" pro="Unlimited" />
+          <ComparisonRow icon={Zap} label="AI quizzes" free="5 / week" plus="30 / week" pro="Unlimited" />
+          <ComparisonRow icon={Trophy} label="Study plan" free="Basic" plus="Personalized" pro="Personalized" />
+          <ComparisonRow icon={Sparkles} label="AI marking" free="—" plus="—" pro="Included" />
+        </div>
+      </div>
+    </section>
+
+    <section className="billing-trust-section">
+      <div className="editorial-wrap billing-trust-grid">
+        <div data-reveal="left"><span className="sl-kicker"><ShieldCheck /> Secure and straightforward</span><h2>Upgrade without the awkward part.</h2><p>Stripe handles checkout, invoices, payment methods, plan changes and cancellation. Your AI requests remain authenticated through Studentley&apos;s secure server endpoint.</p><div className="billing-trust-points"><span><Check /> Prices include applicable tax</span><span><Check /> Cancel or switch from billing settings</span><span><Check /> No payment details stored by Studentley</span></div></div>
+        <div className="billing-card-visual" data-reveal="right"><header><CreditCard /><span><small>PAYMENT</small><b>Secured by Stripe</b></span></header><div><small>STUDENTLEY PLAN</small><strong>PLUS</strong><span>€3.99 / month</span></div><footer><ShieldCheck /> Encrypted checkout</footer></div>
+      </div>
+    </section>
+
+    <section className="editorial-final plans-final">
+      <div className="editorial-final-rings" aria-hidden="true"><i /><i /><i /></div>
+      <div data-reveal="scale"><span><Rocket /></span><small>START WHERE YOU ARE</small><h2>YOUR FIRST PLAN<br />CAN BE FREE.</h2><p>Create your account now. Upgrade only when the extra room becomes useful.</p><div><button className="sl-primary white" type="button" onClick={() => choose('free')}>Start free <ArrowRight /></button><Link className="sl-text-link white" to="/features">Explore the features</Link></div></div>
+    </section>
+  </main></PublicLayout>
+}
+
+function ComparisonRow({ icon: Icon, label, free, plus, pro }) {
+  return <div className="comparison-row"><span><Icon />{label}</span><b>{free}</b><b>{plus}</b><b>{pro}</b></div>
+}
+
+function PlanHeroVisual() {
+  return <div className="plan-hero-visual" aria-label="Studentley plan levels">
+    <div className="plan-hero-rings"><i /><i /><i /></div>
+    <article className="free"><small>01</small><Sprout /><b>FREE</b><strong>€0</strong></article>
+    <article className="plus"><small>02</small><Sparkles /><b>PLUS</b><strong>€3.99</strong><em>MOST POPULAR</em></article>
+    <article className="pro"><small>03</small><Rocket /><b>PRO</b><strong>€6.99</strong></article>
+  </div>
 }
