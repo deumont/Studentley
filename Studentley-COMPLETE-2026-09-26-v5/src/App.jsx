@@ -98,13 +98,26 @@ function RouteTransition({ pathname }) {
     const betweenPublicAndDashboard = (publicHandoff && pathname === '/app') || (previous === '/app' && returningToPublic)
     if (!betweenPublicAndDashboard) { setDestination(null); return undefined }
     setDestination(pathname === '/app' ? 'dashboard' : 'home')
-    const timer = window.setTimeout(() => setDestination(null), 760)
+    const timer = window.setTimeout(() => setDestination(null), pathname === '/app' ? 1180 : 760)
     return () => window.clearTimeout(timer)
   }, [pathname])
 
   if (!destination) return null
-  return <div className="studentley-route-transition" role="status" aria-live="polite">
-    <div className="route-transition-mark"><span>S</span><i /></div>
-    <p>{destination === 'dashboard' ? 'Opening your dashboard' : 'Opening Studentley'}</p>
+  return <div className={`studentley-route-transition route-to-${destination}`} role="status" aria-live="polite">
+    <span className="route-transition-wash" aria-hidden="true" />
+    {destination === 'dashboard' && <div className="route-build-shell" aria-hidden="true">
+      <aside><span className="route-build-logo" />{Array.from({ length: 6 }, (_, index) => <i key={index} />)}</aside>
+      <main>
+        <header><span /><i /><i /></header>
+        <section className="route-build-hero"><div><i /><b /><b /><em /></div><span /></section>
+        <section className="route-build-metrics">{Array.from({ length: 4 }, (_, index) => <i key={index} />)}</section>
+        <section className="route-build-panels"><i /><i /></section>
+      </main>
+    </div>}
+    <div className="route-transition-status">
+      <div className="route-transition-mark"><span>S</span><i /></div>
+      <p>{destination === 'dashboard' ? 'Building your dashboard' : 'Opening Studentley'}</p>
+      {destination === 'dashboard' && <span className="route-build-progress"><i /></span>}
+    </div>
   </div>
 }
