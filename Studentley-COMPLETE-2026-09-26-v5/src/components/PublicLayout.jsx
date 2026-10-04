@@ -14,7 +14,6 @@ export default function PublicLayout({ children }) {
         <Link className="public-brand" to="/" onClick={close}><BrandWordmark variant="light" /></Link>
         <div className={`public-links ${open ? 'open' : ''}`}>
           <NavLink end to="/" onClick={close}>Home</NavLink>
-          <NavLink to="/features" onClick={close}>Features</NavLink>
           <NavLink to="/plans" onClick={close}>Plans</NavLink>
           <div className="public-mobile-actions">{session ? <Link className="public-cta public-dashboard-link" to="/app" onClick={close}>Dashboard <ArrowRight /></Link> : <><Link to="/login" onClick={close}>Sign in</Link><Link className="public-cta" to="/signup" onClick={close}>Create account <ArrowRight /></Link></>}</div>
         </div>
@@ -23,6 +22,6 @@ export default function PublicLayout({ children }) {
       </nav>
     </header>
     {children}
-    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><BrandWordmark variant="dark" /></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><Link to="/features">Features</Link><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy Policy</Link><Link to="/legal/terms">Terms & Conditions</Link><Link to="/legal/imprint">Legal Notice</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
+    <footer className="public-footer"><div className="public-container footer-grid"><div><Link className="public-brand light-mark" to="/"><BrandWordmark variant="dark" /></Link><p>A study system designed around the student actually doing the studying.</p></div><div><b>Product</b><Link to="/">Home</Link><Link to="/plans">Plans</Link></div><div><b>Account</b><Link to="/login">Sign in</Link><Link to="/signup">Create account</Link></div><div><b>Legal</b><Link to="/legal/privacy">Privacy Policy</Link><Link to="/legal/terms">Terms & Conditions</Link><Link to="/legal/imprint">Legal Notice</Link></div></div><div className="public-container footer-bottom"><span>© 2026 Studentley</span><span>Student-first. Personal by design.</span></div></footer>
   </div>
 }

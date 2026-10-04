@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useLayoutEffect, useRef, useState } from 'react'
 import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
 import { useApp } from './context/AppContext'
 import Auth from './pages/Auth'
@@ -12,7 +12,6 @@ import Settings from './pages/Settings'
 import Plans from './pages/Plans'
 import Legal from './pages/Legal'
 import Landing from './pages/Landing'
-import Features from './pages/Features'
 import ResetPassword from './pages/ResetPassword'
 import Leaderboard from './pages/Leaderboard'
 import { Loader } from './components/UI'
@@ -49,9 +48,9 @@ export default function App() {
   const gameMode = location.pathname.startsWith('/quiz-show/')
   return <>
     <SeoManager />
+    <RouteTransition pathname={location.pathname} />
     <Routes>
       <Route path="/" element={<Landing />} />
-      <Route path="/features" element={<Features />} />
       <Route path="/plans" element={<Plans />} />
       <Route path="/login" element={<Auth />} />
       <Route path="/signup" element={<Auth />} />
@@ -85,4 +84,25 @@ export default function App() {
     {!gameMode && session && <ActiveQuizShowRejoin />}
     {!gameMode && notice && <div className={`toast ${notice.type}`} role="status">{notice.type === 'error' ? '!' : '✓'} {notice.text}</div>}
   </>
+}
+
+function RouteTransition({ pathname }) {
+  const previousPath = useRef(pathname)
+  const [destination, setDestination] = useState(null)
+
+  useLayoutEffect(() => {
+    const previous = previousPath.current
+    previousPath.current = pathname
+    const betweenHomeAndDashboard = (previous === '/' && pathname === '/app') || (previous === '/app' && pathname === '/')
+    if (!betweenHomeAndDashboard) { setDestination(null); return undefined }
+    setDestination(pathname === '/app' ? 'dashboard' : 'home')
+    const timer = window.setTimeout(() => setDestination(null), 760)
+    return () => window.clearTimeout(timer)
+  }, [pathname])
+
+  if (!destination) return null
+  return <div className="studentley-route-transition" role="status" aria-live="polite">
+    <div className="route-transition-mark"><span>S</span><i /></div>
+    <p>{destination === 'dashboard' ? 'Opening your dashboard' : 'Opening Studentley'}</p>
+  </div>
 }

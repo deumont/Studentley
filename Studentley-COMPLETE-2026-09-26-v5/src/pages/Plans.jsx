@@ -132,7 +132,7 @@ export default function Plans() {
 
     <section className="editorial-final plans-final">
       <div className="editorial-final-rings" aria-hidden="true"><i /><i /><i /></div>
-      <div data-reveal="scale"><span><Rocket /></span><small>START WHERE YOU ARE</small><h2>YOUR FIRST PLAN<br />CAN BE FREE.</h2><p>Create your account now. Upgrade only when the extra room becomes useful.</p><div><button className="sl-primary white" type="button" onClick={() => choose('free')}>Start free <ArrowRight /></button><Link className="sl-text-link white" to="/features">Explore the features</Link></div></div>
+      <div data-reveal="scale"><span><Rocket /></span><small>START WHERE YOU ARE</small><h2>YOUR FIRST PLAN<br />CAN BE FREE.</h2><p>Create your account now. Upgrade only when the extra room becomes useful.</p><div><button className="sl-primary white" type="button" onClick={() => choose('free')}>Start free <ArrowRight /></button><Link className="sl-text-link white" to="/">Back to home</Link></div></div>
     </section>
   </main></PublicLayout>
 }

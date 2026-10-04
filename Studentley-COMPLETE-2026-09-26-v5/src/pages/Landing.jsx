@@ -243,7 +243,7 @@ export default function Landing() {
         <p>Create your account and choose your first mode.</p>
         <div>
           <Link className="sl-primary white" to="/signup">Create a free account <ArrowRight /></Link>
-          <Link className="sl-text-link white" to="/features">Explore every feature</Link>
+          <Link className="sl-text-link white" to="/plans">Compare plans</Link>
         </div>
       </div>
     </section>
