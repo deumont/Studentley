@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import {
   ArrowDown,
   ArrowRight,
@@ -78,10 +78,31 @@ export default function Landing() {
     }
     window.addEventListener('pointermove', moveLight, { passive: true })
 
+    let lastScrollY = window.scrollY
+    let scrollFrame
+    const updateNavigation = () => {
+      const currentScrollY = window.scrollY
+      document.body.classList.toggle('home-nav-scrolled', currentScrollY > 24)
+      if (currentScrollY <= 24) document.body.classList.remove('home-nav-hidden')
+      else if (currentScrollY > lastScrollY && currentScrollY > 110) document.body.classList.add('home-nav-hidden')
+      else if (currentScrollY < lastScrollY) document.body.classList.remove('home-nav-hidden')
+      lastScrollY = currentScrollY
+      scrollFrame = undefined
+    }
+    const handleScroll = () => {
+      if (scrollFrame) return
+      scrollFrame = window.requestAnimationFrame(updateNavigation)
+    }
+    updateNavigation()
+    window.addEventListener('scroll', handleScroll, { passive: true })
+
     return () => {
       observer?.disconnect()
       window.removeEventListener('pointermove', moveLight)
+      window.removeEventListener('scroll', handleScroll)
+      if (scrollFrame) window.cancelAnimationFrame(scrollFrame)
       document.body.classList.remove('studentley-home-live')
+      document.body.classList.remove('home-nav-hidden', 'home-nav-scrolled')
       root.classList.remove('scroll-reveal-ready')
     }
   }, [])
@@ -89,7 +110,6 @@ export default function Landing() {
   return <PublicLayout><main className="sl-home" ref={pageRef}>
     <section className="sl-hero">
       <div className="sl-contours" aria-hidden="true"><i /><i /><i /><i /></div>
-      <div className="sl-hero-index" aria-hidden="true">STUDENTLEY / 2026</div>
       <div className="sl-hero-copy">
         <span className="sl-kicker"><Sparkles /> The study platform with a pulse</span>
         <h1>
@@ -237,9 +257,16 @@ function ExamPreview() {
       <header><div><small>STUDENTLEY EXAM LAB</small><b>Mathematics · IGCSE</b></div><span><ScanLine /></span></header>
       <div className="sl-exam-meta"><span>Paper 2</span><span>90 minutes</span><span>80 marks</span></div>
       <section><b>1</b><p>Solve the simultaneous equations.<br /><strong>Show all your working.</strong></p><em>[4]</em></section>
-      <div className="sl-working-lines"><i /><i /><i /></div>
+      <div className="sl-equation"><span>2x + y = 11</span><span>x − y = 1</span></div>
+      <div className="sl-working-lines"><i /><i /></div>
       <section><b>2</b><p>The graph shows the journey of a train. Calculate its average speed.</p><em>[5]</em></section>
-      <div className="sl-mini-graph"><i /><span /><b /></div>
+      <div className="sl-mini-graph">
+        <small className="axis-title y">Distance (km)</small><small className="axis-title x">Time (min)</small>
+        <span className="y-value top">120</span><span className="y-value middle">60</span><span className="y-value bottom">0</span>
+        <span className="x-value start">0</span><span className="x-value middle">30</span><span className="x-value end">60</span>
+        <i />
+      </div>
+      <label className="sl-answer-field"><span>Average speed =</span><input aria-label="Average speed answer" /><b>km/h</b></label>
       <footer><small>Page 1 of 12</small><b>Turn over →</b></footer>
     </article>
     <div className="sl-exam-scan"><span><ScanLine /> Building question paper</span></div>
@@ -265,17 +292,17 @@ function RivalsArena() {
 }
 
 function QuizShowPreview() {
+  const [selectedAnswer, setSelectedAnswer] = useState(null)
+  const answers = [['A', 'Respiration'], ['B', 'Photosynthesis'], ['C', 'Transpiration'], ['D', 'Fermentation']]
+
   return <div className="sl-show-stage sl-wrap" data-reveal="scale" aria-label="Preview of the Studentley Quiz Show">
     <div className="sl-show-status"><span><i /> LIVE</span><b><Mic /> STUDENTLEY AI HOST</b><time><Timer /> 12</time></div>
     <div className="sl-question-value"><span>QUESTION 09</span><b>500 POINTS</b></div>
     <h3>Which process allows plants to convert light energy into chemical energy?</h3>
     <div className="sl-show-options">
-      <button><b>A</b><span>Respiration</span></button>
-      <button><b>B</b><span>Photosynthesis</span></button>
-      <button><b>C</b><span>Transpiration</span></button>
-      <button><b>D</b><span>Fermentation</span></button>
+      {answers.map(([letter, answer]) => <button type="button" className={selectedAnswer === letter ? 'selected' : ''} aria-pressed={selectedAnswer === letter} onClick={() => setSelectedAnswer(letter)} key={letter}><b>{letter}</b><span>{answer}</span></button>)}
     </div>
-    <div className="sl-final-answer"><span><Radio /></span><p><small>THE HOST IS LISTENING</small><b>“Is that your final answer?”</b></p><i /></div>
+    {selectedAnswer && <div className="sl-final-answer" aria-live="polite"><span><Radio /></span><p><small>YOU SELECTED {selectedAnswer}</small><b>“Is that your final answer?”</b></p><i /></div>}
     <aside className="sl-prize-ladder">
       {[1000, 800, 650, 500, 350, 250, 150].map(points => <span className={points === 500 ? 'active' : ''} key={points}><small>{points === 1000 ? <Crown /> : '•'}</small><b>{points.toLocaleString()} SP</b></span>)}
     </aside>
