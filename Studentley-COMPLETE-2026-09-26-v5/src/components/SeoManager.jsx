@@ -3,8 +3,8 @@ import { useLocation } from 'react-router-dom'
 
 const siteUrl = 'https://www.studentley.com'
 const defaultSeo = {
-  title: 'Studentley — AI Study Planner, Exam Practice & Rivals',
-  description: 'Studentley combines AI study tools with Rivals: upload notes, build study plans, create exam practice, and compete or study with friends.',
+  title: 'Studentley — Real Exam Papers, Rivals & Live Quiz Shows',
+  description: 'Generate proper multi-page exams, compete in ranked study battles and host live AI-powered Quiz Shows with Studentley.',
 }
 
 const pages = {
