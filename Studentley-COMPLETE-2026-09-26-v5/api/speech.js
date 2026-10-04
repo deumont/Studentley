@@ -13,7 +13,6 @@ export default async function handler(request, response) {
   try {
     await requireUser(request)
     const input = cleanForSpeech(request.body?.text).slice(0, 3000)
-    const quizShow = request.body?.style === 'quiz_show'
     if (!input) return response.status(400).json({ error: 'Enter text to read aloud.' })
     const key = process.env.OPENAI_API_KEY || process.env.iStudent_Key_OpenAi || process.env.ISTUDENT_KEY_OPENAI
     if (!key) return response.status(503).json({ error: 'The natural voice is not configured.' })
@@ -28,12 +27,10 @@ export default async function handler(request, response) {
         headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
-          voice: quizShow ? (process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx') : (process.env.OPENAI_TTS_VOICE || 'marin'),
+          voice: process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx',
           input,
-          instructions: quizShow
-            ? 'Use a confident, natural male voice like the main host of an exciting prime-time television quiz show for teenagers. Sound genuinely thrilled and highly energetic from the first word. Use lively momentum, bright reactions, strong emphasis, varied rhythm and a smiling delivery. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use only very short dramatic pauses before reveals. Keep every line punchy, clear, fast-moving and human, never robotic, monotonous, flat, shouty or overacted.'
-            : 'Speak like a warm, calm and encouraging personal tutor. Sound natural and conversational, with gentle expression, clear pronunciation and relaxed pacing. Avoid exaggerated enthusiasm and robotic pauses.',
-          speed: quizShow ? 1.08 : 1,
+          instructions: 'Use a confident, natural male voice like the main host of an exciting prime-time television quiz show for teenagers. Sound genuinely thrilled and highly energetic from the first word. Use lively momentum, bright reactions, strong emphasis, varied rhythm and a smiling delivery. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use only very short dramatic pauses before reveals. Keep every line punchy, clear, fast-moving and human, never robotic, monotonous, flat, shouty or overacted.',
+          speed: 1.08,
           response_format: 'mp3',
         }),
       })

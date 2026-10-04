@@ -5,7 +5,7 @@ import { Button, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../comp
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { clearActiveQuizShow, openQuizShowTab, prepareQuizShowTab, rememberActiveQuizShow } from '../lib/activeQuizShow'
-import { getPersonalAIAudio } from '../services/ai'
+import { getAIAudio } from '../services/ai'
 import { answerStudyParty, buzzStudyParty, continueStudyPartyHost, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, respondStudyPartyDouble, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
@@ -219,7 +219,7 @@ export function StudyPartyRoom() {
       speechRequestRef.current = request
       try {
         setVoiceStatus(attempt ? 'Reconnecting the AI host voice…' : 'Studentley is speaking…')
-        const audioData = await getPersonalAIAudio(text, request.signal, 'quiz_show')
+        const audioData = await getAIAudio(text, request.signal, 'quiz_show')
         if (context.state === 'suspended') await context.resume()
         const audioBuffer = await context.decodeAudioData(audioData.slice(0))
         await new Promise((resolve, reject) => {

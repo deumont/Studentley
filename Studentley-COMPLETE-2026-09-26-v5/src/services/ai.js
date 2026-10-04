@@ -7,7 +7,7 @@ const activityLabels = {
   generateQuiz: 'Generating quiz', generateFlashcards: 'Generating flashcards', generateSummary: 'Generating summary',
   generateMockExam: 'Generating mock exam', generateStudyPlan: 'Generating study plan', analyzeProgress: 'Analyzing progress',
   generateVisualExplanation: 'Designing visual explanation',
-  markMockExam: 'Marking completed exam', personalAssistant: 'Your personal AI is working',
+  markMockExam: 'Marking completed exam', generateExplanation: 'Generating explanation',
 }
 
 const emitActivities = () => {
@@ -30,7 +30,6 @@ function targetFor(operation, input, result) {
   if (operation === 'generateStudyPlan') return { path: '/study-plan' }
   if (operation === 'analyzeProgress') return { path: '/practice', state: { openPracticeTab: 'results' } }
   if (operation === 'markMockExam') return { path: '/practice', state: { openPracticeSetId: input.practiceSetId } }
-  if (operation === 'personalAssistant') return { path: '/personal-ai', state: { generatedAssistantResult: result, generatedQuestion: input.question } }
   return null
 }
 
@@ -56,7 +55,7 @@ export const AI_OPERATIONS = Object.freeze({
   GENERATE_FLASHCARDS: 'generateFlashcards', GENERATE_SUMMARY: 'generateSummary',
   GENERATE_MOCK_EXAM: 'generateMockExam', GENERATE_STUDY_PLAN: 'generateStudyPlan',
   GENERATE_VISUAL_EXPLANATION: 'generateVisualExplanation',
-  ANALYZE_PROGRESS: 'analyzeProgress', MARK_MOCK_EXAM: 'markMockExam', PERSONAL_ASSISTANT: 'personalAssistant',
+  ANALYZE_PROGRESS: 'analyzeProgress', MARK_MOCK_EXAM: 'markMockExam', GENERATE_EXPLANATION: 'generateExplanation',
 })
 
 export async function requestAI(operation, input) {
@@ -88,9 +87,9 @@ export const generateVisualExplanation = input => requestAI(AI_OPERATIONS.GENERA
 export const generateStudyPlan = input => requestAI(AI_OPERATIONS.GENERATE_STUDY_PLAN, input)
 export const analyzeProgress = input => requestAI(AI_OPERATIONS.ANALYZE_PROGRESS, input)
 export const markMockExam = input => requestAI(AI_OPERATIONS.MARK_MOCK_EXAM, input)
-export const askPersonalAssistant = input => requestAI(AI_OPERATIONS.PERSONAL_ASSISTANT, input)
+export const generateExplanation = input => requestAI(AI_OPERATIONS.GENERATE_EXPLANATION, input)
 
-export async function getPersonalAIAudio(text, signal, style = 'personal_ai') {
+export async function getAIAudio(text, signal, style = 'quiz_show') {
   const { data } = await supabase.auth.getSession()
   const response = await fetch('/api/speech', {
     method: 'POST',

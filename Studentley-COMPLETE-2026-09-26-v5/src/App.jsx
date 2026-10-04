@@ -14,7 +14,6 @@ import Legal from './pages/Legal'
 import Landing from './pages/Landing'
 import Features from './pages/Features'
 import ResetPassword from './pages/ResetPassword'
-import PersonalAI from './pages/PersonalAI'
 import Leaderboard from './pages/Leaderboard'
 import { Loader } from './components/UI'
 import GenerationStatus from './components/GenerationStatus'
@@ -28,7 +27,7 @@ function Protected({ children }) {
   const { configured, session, authLoading, profile, workspaceLoaded } = useApp()
   const location = useLocation()
   const path = location.pathname
-  const skeletonVariant = path === '/app' ? 'dashboard' : path === '/upload' ? 'documents' : path === '/study-plan' ? 'planner' : path === '/practice' ? 'practice' : path === '/leaderboard' ? 'leaderboard' : path === '/settings' ? 'settings' : path === '/personal-ai' ? 'ai' : path === '/onboarding' ? 'onboarding' : path.startsWith('/quiz-show/') ? 'quiz-show' : path.startsWith('/rivals/ranked') ? 'ranked' : path.startsWith('/rivals/friends') ? 'friends' : path.startsWith('/rivals/party') ? 'party' : path.startsWith('/rivals/quizzes') ? 'library' : path.startsWith('/rivals/match') ? 'arena' : path.startsWith('/rivals') ? 'rivals' : 'generic'
+  const skeletonVariant = path === '/app' ? 'dashboard' : path === '/upload' ? 'documents' : path === '/study-plan' ? 'planner' : path === '/practice' ? 'practice' : path === '/leaderboard' ? 'leaderboard' : path === '/settings' ? 'settings' : path === '/onboarding' ? 'onboarding' : path.startsWith('/quiz-show/') ? 'quiz-show' : path.startsWith('/rivals/ranked') ? 'ranked' : path.startsWith('/rivals/friends') ? 'friends' : path.startsWith('/rivals/party') ? 'party' : path.startsWith('/rivals/quizzes') ? 'library' : path.startsWith('/rivals/match') ? 'arena' : path.startsWith('/rivals') ? 'rivals' : 'generic'
   const standalone = skeletonVariant === 'quiz-show' || skeletonVariant === 'onboarding'
   if (authLoading || (session && !workspaceLoaded)) return <Loader full shell={!standalone} variant={skeletonVariant} label="Loading Studentley…" />
   if (!configured || !session) return <Navigate to="/login" replace state={{ from: location }} />
@@ -77,10 +76,7 @@ export default function App() {
         <Route path="/upload" element={<Upload />} />
         <Route path="/study-plan" element={<StudyPlan />} />
         <Route path="/practice" element={<Practice />} />
-        <Route path="/personal-ai" element={<PersonalAI />} />
-        <Route path="/ai-tutor" element={<Navigate to="/personal-ai" replace />} />
         <Route path="/leaderboard" element={<Leaderboard />} />
-        <Route path="/personalization" element={<Navigate to="/personal-ai" replace />} />
         <Route path="/settings" element={<Settings />} />
       </Route>
       <Route path="*" element={<Navigate to="/" replace />} />

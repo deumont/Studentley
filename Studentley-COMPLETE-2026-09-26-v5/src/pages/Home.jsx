@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react'
-import { ArrowRight, BookOpen, CalendarDays, CheckCircle2, FileText, Flame, GraduationCap, Lightbulb, ListTodo, Sparkles, Target } from 'lucide-react'
+import { ArrowRight, CalendarDays, CheckCircle2, FileText, Flame, GraduationCap, Lightbulb, ListTodo, Sparkles, Target } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { Button, EmptyState, Loader, formatDate, greeting } from '../components/UI'
@@ -28,7 +28,7 @@ export default function Home() {
   if (loading && !data) return <Loader variant="dashboard" label="Loading your dashboard…" />
   const name = profile?.display_name?.split(' ')[0] || 'there'
   const copy = {
-    greeting: greeting(), ready: 'Your day is ready when you are.', shape: 'Let’s shape a focused day together.', tasks: 'Today’s tasks', due: 'due today', progress: 'Study progress', plan: 'plan a session', todayPlan: 'of today’s plan', streak: 'Study streak', day: 'day', days: 'days', complete: 'complete a session', schedule: 'Today’s schedule', viewPlan: 'View plan', nothing: 'Nothing planned today', addSession: 'Add a study session when you’re ready.', planSession: 'Plan a session', exams: 'Upcoming exams', viewAll: 'View all', noExams: 'No exams yet', addExamText: 'Add an exam manually or upload your exam schedule.', addExam: 'Add exam', quick: 'Quick actions', upload: 'Upload document', uploadSub: 'Notes, PDFs, images and more', visualGuide: 'Generate a visual guide', visualGuideSub: 'Explain a topic with pictures and graphs', personalAI: 'Ask your personal AI', personalAISub: 'Get help or add plans and deadlines', examSub: 'Track a real upcoming assessment', left: 'days left', today: 'Today', reopened: 'Study session reopened.', completed: 'Study session completed.'
+    greeting: greeting(), ready: 'Your day is ready when you are.', shape: 'Let’s shape a focused day together.', tasks: 'Today’s tasks', due: 'due today', progress: 'Study progress', plan: 'plan a session', todayPlan: 'of today’s plan', streak: 'Study streak', day: 'day', days: 'days', complete: 'complete a session', schedule: 'Today’s schedule', viewPlan: 'View plan', nothing: 'Nothing planned today', addSession: 'Add a study session when you’re ready.', planSession: 'Plan a session', exams: 'Upcoming exams', viewAll: 'View all', noExams: 'No exams yet', addExamText: 'Add an exam manually or upload your exam schedule.', addExam: 'Add exam', quick: 'Quick actions', upload: 'Upload document', uploadSub: 'Notes, PDFs, images and more', visualGuide: 'Generate a visual guide', visualGuideSub: 'Explain a topic with pictures and graphs', examSub: 'Track a real upcoming assessment', left: 'days left', today: 'Today', reopened: 'Study session reopened.', completed: 'Study session completed.'
   }
   const completeSession = async session => { await update('study_sessions', session.id, { completed_at: session.completed_at ? null : new Date().toISOString() }); notify(session.completed_at ? copy.reopened : copy.completed) }
   return <>
@@ -44,7 +44,6 @@ export default function Home() {
       <section className="card dashboard-card actions-card"><CardHeader icon={Sparkles} title={copy.quick} />
         <Quick tone="blue" icon={FileText} title={copy.upload} sub={copy.uploadSub} onClick={() => navigate('/upload')} />
         <Quick tone="green" icon={Lightbulb} title={copy.visualGuide} sub={copy.visualGuideSub} onClick={() => navigate('/practice', { state: { openPracticeTab: 'visuals', openPracticeGenerator: 'visual' } })} />
-        <Quick tone="violet" icon={BookOpen} title={copy.personalAI} sub={copy.personalAISub} onClick={() => navigate('/personal-ai')} />
         <Quick tone="orange" icon={GraduationCap} title={copy.addExam} sub={copy.examSub} onClick={() => navigate('/practice')} />
       </section>
     </div>

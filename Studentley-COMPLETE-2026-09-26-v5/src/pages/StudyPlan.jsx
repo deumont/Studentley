@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { BookOpen, Brain, CalendarDays, Check, ChevronLeft, ChevronRight, Crown, FileQuestion, FileText, LayoutGrid, ListTodo, Pencil, Plus, Sparkles, Trash2 } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { askPersonalAssistant, generateFlashcards, generateQuiz, generateStudyPlan } from '../services/ai'
+import { generateExplanation, generateFlashcards, generateQuiz, generateStudyPlan } from '../services/ai'
 import { Button, EmptyState, Field, Modal, PageHeading, UpgradeModal, formatDate } from '../components/UI'
 
 const todayInput = (hour = 16) => { const date = new Date(); date.setHours(hour, 0, 0, 0); return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16) }
@@ -40,7 +40,7 @@ export default function StudyPlan() {
     setActionLoading(actionKey)
     try {
       if (action === 'explanation') {
-        const result = await askPersonalAssistant({ documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, question: `Give me a deep, structured explanation of “${session.title}”. Teach it step by step from the selected study material, include one worked example when appropriate, and finish with three quick self-check questions.` })
+        const result = await generateExplanation({ documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, topic: session.title })
         setExplanation({ title: session.title, source: sources.map(item => item.name).join(' · '), ...result })
       } else {
         const input = { documentId: sources[0].id, documentIds: sources.map(item => item.id), subjectId: session.subject_id || null, topic: session.title, difficulty: 'Medium', count: action === 'quiz' ? 8 : 15 }

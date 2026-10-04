@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from 'react'
-import { ArrowDown, ArrowRight, BarChart3, BookOpen, Brain, CalendarDays, Check, Clock3, FileQuestion, FileText, Flag, GraduationCap, Layers3, Library, MessageCircle, Sparkles, Swords, Target, Trophy, UploadCloud, Users, Zap } from 'lucide-react'
+import { ArrowDown, ArrowRight, BarChart3, BookOpen, Brain, CalendarDays, Check, Clock3, FileQuestion, FileText, Flag, GraduationCap, Layers3, Library, Sparkles, Swords, Target, Trophy, UploadCloud, Users, Zap } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import PublicLayout from '../components/PublicLayout'
 
@@ -12,7 +12,7 @@ const studentFacts = [
 const features = [
   [UploadCloud, 'Document uploads', 'Turn your actual notes, PDFs, presentations, worksheets and images into an organised study library.', 'blue'],
   [CalendarDays, 'Personalized study plan', 'Plan around exams, available time, subjects and the way you prefer to work.', 'green'],
-  [MessageCircle, 'Personal AI', 'Get help shaped by your workspace—and ask it to add plans, tasks and deadlines for you.', 'violet'],
+  [FileText, 'Visual explanations', 'Turn a topic or selected material into a clear illustrated revision guide.', 'violet'],
   [FileQuestion, 'Quizzes & mock exams', 'Build serious practice from the content you are genuinely expected to learn.', 'orange'],
   [BookOpen, 'Flashcards', 'Transform your own learning content into focused recall practice.', 'blue'],
   [BarChart3, 'Progress that means something', 'Keep study activity, preparation and results connected to real subjects and exams.', 'green'],
@@ -35,7 +35,7 @@ export default function Landing() {
   }, [])
 
   return <PublicLayout><main ref={pageRef}>
-    <section className="public-hero"><div className="public-container hero-grid"><div className="hero-copy"><span className="public-pill"><Sparkles /> Built around the student</span><h1>School isn’t personalized. <em>Studentley is.</em></h1><p>Bring your material, exams and schedule into one focused system. Your personalized AI helps organise what matters and builds study tools around your real school life.</p><div className="hero-actions"><Link className="public-cta large" to="/signup">Create your account <ArrowRight /></Link><a className="public-secondary" href="#how">Explore Studentley <ArrowDown /></a></div><div className="hero-proof"><span><Check /> Your own material</span><span><Check /> Personalized AI</span><span><Check /> Your own schedule</span></div></div><ProductPreview /></div></section>
+    <section className="public-hero"><div className="public-container hero-grid"><div className="hero-copy"><span className="public-pill"><Sparkles /> Built around the student</span><h1>School isn’t personalized. <em>Studentley is.</em></h1><p>Bring your material, exams and schedule into one focused system. Studentley organises what matters and builds AI study tools around your real school life.</p><div className="hero-actions"><Link className="public-cta large" to="/signup">Create your account <ArrowRight /></Link><a className="public-secondary" href="#how">Explore Studentley <ArrowDown /></a></div><div className="hero-proof"><span><Check /> Your own material</span><span><Check /> AI study tools</span><span><Check /> Your own schedule</span></div></div><ProductPreview /></div></section>
 
     <section className="student-first"><div className="public-container student-grid"><div data-reveal="left"><span className="section-kicker">Built for students</span><h2>Most platforms start with the system. We start with you.</h2><p>Two students in the same class can need completely different support. Studentley is designed to understand that context before it tries to help.</p></div><div className="fact-stack" data-reveal="right">{studentFacts.map(([title, text], index) => <article key={title}><span>0{index + 1}</span><div><h3>{title}</h3><p>{text}</p></div></article>)}</div></div></section>
 

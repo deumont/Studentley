@@ -3,19 +3,19 @@ import { useLocation } from 'react-router-dom'
 
 const siteUrl = 'https://www.studentley.com'
 const defaultSeo = {
-  title: 'Studentley — Personal AI Study Planner & Exam Practice',
-  description: 'Studentley combines personalized AI study tools with Rivals: upload notes, build study plans, create exam practice, and compete or study with friends.',
+  title: 'Studentley — AI Study Planner, Exam Practice & Rivals',
+  description: 'Studentley combines AI study tools with Rivals: upload notes, build study plans, create exam practice, and compete or study with friends.',
 }
 
 const pages = {
   '/': defaultSeo,
   '/features': {
     title: 'Studentley Features — AI Study Plans, Practice & Mock Exams',
-    description: 'Explore Studentley features for document-based study plans, personal AI, quizzes, flashcards, realistic mock exams and study progress.',
+    description: 'Explore Studentley features for document-based study plans, visual explanations, quizzes, flashcards, realistic mock exams and study progress.',
   },
   '/plans': {
     title: 'Studentley Plans — Free, Plus & Pro',
-    description: 'Compare Studentley Free, Plus and Pro plans for document uploads, personal AI, study plans, practice tools and mock exams.',
+    description: 'Compare Studentley Free, Plus and Pro plans for document uploads, AI study plans, practice tools and mock exams.',
   },
   '/legal/privacy': {
     title: 'Privacy Policy — Studentley',

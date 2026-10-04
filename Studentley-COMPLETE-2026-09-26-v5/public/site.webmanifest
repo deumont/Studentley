@@ -1,7 +1,7 @@
 {
   "name": "Studentley",
   "short_name": "Studentley",
-  "description": "A personal AI study workspace built around your material, schedule and goals.",
+  "description": "An AI study workspace built around your material, schedule and goals.",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#ffffff",
