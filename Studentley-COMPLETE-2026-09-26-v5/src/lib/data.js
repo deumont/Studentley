@@ -1,9 +1,9 @@
 import { supabase } from './supabase'
 import { COMMUNITY_PROFILES, withCommunityStudyLeaderboard } from './communityProfiles'
 
-const TABLES = ['profiles', 'subjects', 'tasks', 'exams', 'study_sessions', 'timetable_entries', 'documents', 'notifications', 'achievements', 'subscriptions', 'practice_sets', 'practice_results']
+const TABLES = ['profiles', 'subjects', 'exams', 'study_sessions', 'timetable_entries', 'documents', 'notifications', 'achievements', 'subscriptions', 'practice_sets', 'practice_results']
 const SELECTS = {
-  tasks: '*, subjects(id,name,color)', exams: '*, subjects(id,name,color)',
+  exams: '*, subjects(id,name,color)',
   study_sessions: '*, subjects(id,name,color)', timetable_entries: '*, subjects(id,name,color)',
   documents: '*, subjects(id,name,color)', practice_results: '*, practice_sets(title,kind)',
 }
@@ -11,10 +11,15 @@ const SELECTS = {
 export async function loadWorkspace() {
   // Reminder generation is intentionally best-effort so an older database can still load.
   await supabase.rpc('create_due_study_reminders').then(() => {}).catch(() => {})
-  const results = await Promise.all(TABLES.map(table => supabase.from(table).select(SELECTS[table] || '*').order('created_at', { ascending: false })))
+  const [results, topicsResult] = await Promise.all([
+    Promise.all(TABLES.map(table => supabase.from(table).select(SELECTS[table] || '*').order('created_at', { ascending: false }))),
+    supabase.from('topics').select('*, subjects(id,name,color)').order('created_at', { ascending: false }),
+  ])
   const failed = results.find(result => result.error)
   if (failed) throw failed.error
-  return Object.fromEntries(TABLES.map((table, index) => [table, results[index].data || []]))
+  const topicsUnavailable = topicsResult.error && (topicsResult.error.code === '42P01' || /schema cache|could not find.*topics/i.test(topicsResult.error.message || ''))
+  if (topicsResult.error && !topicsUnavailable) throw topicsResult.error
+  return { ...Object.fromEntries(TABLES.map((table, index) => [table, results[index].data || []])), topics: topicsResult.data || [] }
 }
 
 export async function createRecord(table, record) {
@@ -40,7 +45,7 @@ export async function saveProfile(userId, changes) {
   return data
 }
 
-export async function uploadDocument({ userId, file, subjectId, category = 'study_material', onProgress }) {
+export async function uploadDocument({ userId, file, subjectId, topicId, category = 'study_material', onProgress }) {
   const allowed = ['application/pdf', 'application/vnd.ms-powerpoint', 'application/vnd.openxmlformats-officedocument.presentationml.presentation', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'text/plain', 'image/jpeg', 'image/png']
   if (!allowed.includes(file.type)) throw new Error('This file type is not supported.')
   if (file.size > 25 * 1024 * 1024) throw new Error('Files must be 25 MB or smaller.')
@@ -67,6 +72,7 @@ export async function uploadDocument({ userId, file, subjectId, category = 'stud
     return await createRecord('documents', {
       user_id: userId, name: file.name, storage_path: storagePath, mime_type: file.type,
       size_bytes: file.size, subject_id: subjectId || null, category, status: 'uploaded',
+      ...(topicId ? { topic_id: topicId } : {}),
     })
   } catch (error) {
     await supabase.storage.from('documents').remove([storagePath])

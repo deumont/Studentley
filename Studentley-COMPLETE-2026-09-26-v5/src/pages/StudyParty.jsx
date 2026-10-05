@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { AlertTriangle, ArrowRight, BellRing, BookOpenCheck, BrainCircuit, Check, Clock3, Coins, Copy, Crown, Flame, Gauge, House, Link2, LoaderCircle, LockKeyhole, Maximize2, Minimize2, PartyPopper, Radio, Send, Sparkles, Target, Trophy, UploadCloud, UserPlus, Volume2, VolumeX, Zap } from 'lucide-react'
-import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Button, ErrorState, Field, Loader, Modal, ProfileAvatar } from '../components/UI'
 import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
@@ -20,18 +20,23 @@ function SetupRequired({ error }) {
 export default function StudyPartyHome() {
   const { data, user, refresh } = useApp()
   const documents = data?.documents || []
+  const location = useLocation()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const inviteCode = String(searchParams.get('join') || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 6)
   const [mode, setMode] = useState(inviteCode ? 'join' : 'create')
-  const [form, setForm] = useState({ title: 'Friday Quizz Show', subject: '', topic: '', level: 'GCSE / IGCSE', difficulty: 'Adaptive', maxPlayers: 8, questionCount: 12, documentId: documents[0]?.id || '' })
+  const defaults = location.state?.topicDefaults || {}
+  const [form, setForm] = useState({ title: defaults.topic ? `${defaults.topic} Quizz Show` : 'Friday Quizz Show', subject: defaults.subject || '', topic: defaults.topic || '', topicId: defaults.topicId || '', level: 'GCSE / IGCSE', difficulty: 'Adaptive', maxPlayers: 8, questionCount: 12, documentId: defaults.documentId || '', customInstructions: '' })
   const [code, setCode] = useState(inviteCode)
   const [loading, setLoading] = useState(false), [uploading, setUploading] = useState(false), [error, setError] = useState('')
   const [generationStartedAt, setGenerationStartedAt] = useState(null), [generationSeconds, setGenerationSeconds] = useState(0)
   const autoJoined = useRef(false)
 
   useEffect(() => { document.title = 'Quizz Show — Studentley Rivals' }, [])
-  useEffect(() => { if (!form.documentId && documents[0]) setForm(value => ({ ...value, documentId: documents[0].id })) }, [documents, form.documentId])
+  useEffect(() => {
+    if (!location.state?.topicDefaults) return
+    navigate(`${location.pathname}${location.search}`, { replace: true, state: null })
+  }, [location.pathname, location.search, location.state, navigate])
   useEffect(() => {
     if (!generationStartedAt) return
     const update = () => setGenerationSeconds(Math.floor((Date.now() - generationStartedAt) / 1000))
@@ -63,7 +68,7 @@ export default function StudyPartyHome() {
     if (!file) return
     setUploading(true); setError('')
     try {
-      const created = await uploadDocument({ userId: user.id, file, category: 'study_material' })
+      const created = await uploadDocument({ userId: user.id, file, topicId: form.topicId || null, category: 'study_material' })
       await refresh()
       setForm(value => ({ ...value, documentId: created.id }))
     } catch (problem) { setError(problem.message) }
@@ -95,6 +100,7 @@ export default function StudyPartyHome() {
       <header><span><Sparkles /></span><div><h2>Set up the room</h2><p>Choose a topic or upload material. The AI host creates a balanced mix of six round types.</p></div></header>
       <Field label="Study material" hint="Optional when you enter a clear topic below."><div className="rivals-document-pick"><select value={form.documentId} onChange={event => setForm({ ...form, documentId: event.target.value })}><option value="">Use a topic only</option>{documents.map(document => <option value={document.id} key={document.id}>{document.name}</option>)}</select><label className="button rivals-secondary"><UploadCloud /> {uploading ? 'Uploading…' : 'Upload new'}<input hidden type="file" accept=".pdf,.doc,.docx,.ppt,.pptx,.txt,.jpg,.jpeg,.png" onChange={upload} /></label></div></Field>
       <div className="ranked-form-grid"><Field label="Show name"><input required minLength="3" maxLength="120" value={form.title} onChange={event => setForm({ ...form, title: event.target.value })} /></Field><Field label="Subject"><input required value={form.subject} onChange={event => setForm({ ...form, subject: event.target.value })} placeholder="e.g. Biology" /></Field><Field label="Topic"><input required={!form.documentId} value={form.topic} onChange={event => setForm({ ...form, topic: event.target.value })} placeholder="e.g. Cell division" /></Field><Field label="Grade / level"><select value={form.level} onChange={event => setForm({ ...form, level: event.target.value })}>{levels.map(value => <option key={value}>{value}</option>)}</select></Field><Field label="Question set"><select value={form.questionCount} onChange={event => setForm({ ...form, questionCount: Number(event.target.value) })}><option value="12">12 questions · Quick show</option><option value="18">18 questions · Full show</option><option value="24">24 questions · Marathon</option></select></Field><Field label="Room size"><div className="friend-player-count">{roomSizes.map(value => <button type="button" className={form.maxPlayers === value ? 'selected' : ''} onClick={() => setForm({ ...form, maxPlayers: value })} key={value}>{value}</button>)}</div></Field></div>
+      <Field label="Your prompt" hint="Optional — tell the AI host what to focus on or how to shape the rounds."><textarea value={form.customInstructions} onChange={event => setForm({ ...form, customInstructions: event.target.value })} placeholder="e.g. Focus on key definitions, keep calculations short, and make the final round challenging." /></Field>
       {generationStartedAt && <div className="study-party-generation-clock" role="status" aria-live="polite"><span><Clock3 /></span><div><b>Generating your Quizz Show</b><small>The AI host is assembling questions and rounds…</small></div><strong>{String(Math.floor(generationSeconds / 60)).padStart(2, '0')}:{String(generationSeconds % 60).padStart(2, '0')}</strong></div>}
       <Button className="rivals-primary full" loading={loading || uploading} disabled={!form.documentId && !form.topic}><BrainCircuit /> Let the AI host build the show</Button>
     </form> : <form className="card join-room-form study-party-join" onSubmit={join}><div className="join-code-icon"><PartyPopper /></div><span className="rivals-kicker">Join the live room</span><h2>Enter the show code</h2><p>You can also open the invite link sent by the host.</p><input required autoCapitalize="characters" maxLength={6} value={code} onChange={event => setCode(event.target.value.toUpperCase().replace(/[^A-Z0-9]/g, ''))} placeholder="ABC123" /><Button className="rivals-primary full" loading={loading} disabled={code.length !== 6}>Join Quizz Show <ArrowRight /></Button></form>}

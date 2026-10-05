@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, FileText, Flame, GraduationCap, Lightbulb, ListTodo, Play, Sparkles, Target, Trophy } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, FileText, Flame, FolderOpen, GraduationCap, Lightbulb, Play, Sparkles, Target, Trophy } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { Button, EmptyState, Loader, formatDate, greeting } from '../components/UI'
@@ -10,8 +10,7 @@ const future = value => new Date(value) >= new Date(new Date().setHours(0, 0, 0,
 export default function Home() {
   const { profile, data, loading, update, notify } = useApp()
   const navigate = useNavigate()
-  const tasks = data?.tasks || [], sessions = data?.study_sessions || [], exams = data?.exams || [], practiceResults = data?.practice_results || []
-  const todayTasks = tasks.filter(item => !item.completed_at && isToday(item.due_at))
+  const topics = data?.topics || [], sessions = data?.study_sessions || [], exams = data?.exams || [], practiceResults = data?.practice_results || []
   const todaySessions = sessions.filter(item => isToday(item.starts_at)).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
   const completedToday = todaySessions.filter(item => item.completed_at).length
   const progress = todaySessions.length ? Math.round(completedToday / todaySessions.length * 100) : 0
@@ -40,7 +39,7 @@ export default function Home() {
       <div className="home-command-copy">
         <span className="home-eyebrow"><Sparkles /> {dayLabel}</span>
         <h1 id="home-title"><span>{greeting()}, {name}.</span> What’s your next move?</h1>
-        <p>{todayTasks.length || todaySessions.length ? 'Your plan is ready. Pick up where you left off or create something new.' : 'A clear day is a blank canvas. Start with a document, a topic or an upcoming exam.'}</p>
+        <p>{topics.length || todaySessions.length ? 'Your plan is ready. Pick up where you left off or create something new.' : 'A clear day is a blank canvas. Start with a document, a topic or an upcoming exam.'}</p>
         <div className="home-command-actions">
           <button className="home-primary-action" onClick={() => navigate(nextSession ? '/study-plan' : '/practice')}>
             <span><Play /></span>
@@ -62,7 +61,7 @@ export default function Home() {
     </section>
 
     <section className="home-stat-strip" aria-label="Today at a glance">
-      <Metric tone="blue" icon={ListTodo} label="Tasks due" value={todayTasks.length} hint="today" />
+      <Metric tone="blue" icon={FolderOpen} label="Study topics" value={topics.length} hint={topics.length === 1 ? 'workspace' : 'workspaces'} />
       <Metric tone="green" icon={Target} label="Daily progress" value={`${progress}%`} hint={todaySessions.length ? 'of your plan' : 'plan a session'} />
       <Metric tone="orange" icon={Flame} label="Study streak" value={streak || '—'} hint={streak === 1 ? 'day' : streak ? 'days' : 'complete a session'} />
       <Metric tone="violet" icon={Trophy} label="Practice runs" value={practiceResults.length} hint="completed" />
