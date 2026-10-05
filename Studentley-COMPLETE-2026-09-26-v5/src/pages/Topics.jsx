@@ -1,14 +1,15 @@
-import React, { useRef, useState } from 'react'
-import { ArrowLeft, ArrowRight, BookOpen, FileQuestion, FileText, Flag, FolderOpen, Image, Lightbulb, MoreVertical, PartyPopper, Pencil, Plus, Sparkles, Trash2, UploadCloud } from 'lucide-react'
+import React, { useEffect, useRef, useState } from 'react'
+import { ArrowLeft, ArrowRight, BookOpen, CircleHelp, FileQuestion, FileText, Flag, FolderOpen, Image, Lightbulb, MoreVertical, PartyPopper, Pencil, Plus, Sparkles, Trash2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { openDocument, uploadDocument } from '../lib/data'
+import { generateExplanation } from '../services/ai'
 import { Button, EmptyState, Field, Modal } from '../components/UI'
 
 const practiceTabs = { quiz: 'quizzes', flashcards: 'flashcards', visual: 'visuals', mock: 'mock' }
-const kindLabels = { quiz: 'Quiz', flashcards: 'Flashcards', visual_explanation: 'Visual guide', mock_exam: 'Mock exam' }
+const kindLabels = { quiz: 'Quiz', flashcards: 'Flashcards', visual_explanation: 'Visual guide', mock_exam: 'Mock exam', topic_summary: 'Focused summary' }
 
-export default function TopicsWorkspace() {
+export default function TopicsWorkspace({ initialSelectedId = '' }) {
   const { user, data, create, update, remove, refresh, notify } = useApp()
   const navigate = useNavigate()
   const inputRef = useRef(null)
@@ -16,10 +17,11 @@ export default function TopicsWorkspace() {
   const subjects = data?.subjects?.filter(item => !item.archived_at) || []
   const documents = data?.documents || []
   const practiceSets = data?.practice_sets || []
-  const [selectedId, setSelectedId] = useState('')
+  const [selectedId, setSelectedId] = useState(initialSelectedId)
   const [modal, setModal] = useState(null)
   const [uploading, setUploading] = useState(false)
   const selected = topics.find(topic => topic.id === selectedId)
+  useEffect(() => { if (initialSelectedId) setSelectedId(initialSelectedId) }, [initialSelectedId])
 
   const documentsFor = topicId => documents.filter(document => document.topic_id === topicId)
   const setsFor = topicId => practiceSets.filter(set => set.topic_id === topicId || set.config?.topicId === topicId)
@@ -84,6 +86,7 @@ export default function TopicsWorkspace() {
         <header><span>CREATE FROM THIS TOPIC</span><h3>What do you want to make?</h3><p>Every generator opens with this topic, subject and attached material already selected. You can add your own prompt before generating.</p></header>
         <div className="topics-action-grid">
           <button onClick={() => inputRef.current?.click()}><span className="blue"><UploadCloud /></span><b>{uploading ? 'Uploading…' : 'Upload material'}</b><small>Add PDFs, notes, slides or images</small><ArrowRight /></button>
+          <button onClick={() => setModal({ type: 'summary' })}><span className="orange"><CircleHelp /></span><b>Explain something</b><small>Summarize what you don’t understand</small><ArrowRight /></button>
           <button onClick={() => openGenerator('quiz')}><span className="green"><FileQuestion /></span><b>Generate quiz</b><small>Multiple-choice practice</small><ArrowRight /></button>
           <button onClick={() => openGenerator('flashcards')}><span className="violet"><BookOpen /></span><b>Generate flashcards</b><small>Definitions or translations</small><ArrowRight /></button>
           <button onClick={() => openGenerator('visual')}><span className="orange"><Lightbulb /></span><b>Visual guide</b><small>Illustrated explanation PDF</small><ArrowRight /></button>
@@ -95,9 +98,11 @@ export default function TopicsWorkspace() {
 
       <div className="topics-content-grid">
         <section className="card topics-content-card"><header><div><FileText /><span><b>Topic material</b><small>{topicDocuments.length} attached</small></span></div><Button variant="ghost" onClick={() => inputRef.current?.click()}><Plus /> Add</Button></header>{topicDocuments.length ? <div className="topics-resource-list">{topicDocuments.map(document => <button onClick={() => openDocument(document)} key={document.id}><span>{document.mime_type?.startsWith('image/') ? <Image /> : <FileText />}</span><span><b>{document.name}</b><small>{document.status === 'ready' ? 'AI analyzed' : 'Ready to use'}</small></span><ArrowRight /></button>)}</div> : <EmptyState compact icon={UploadCloud} title="No files yet" text="Upload material now, or generate directly from the topic name." />}</section>
-        <section className="card topics-content-card"><header><div><Sparkles /><span><b>Generated material</b><small>{topicSets.length} saved</small></span></div></header>{topicSets.length ? <div className="topics-resource-list">{topicSets.map(set => <button onClick={() => navigate('/practice', { state: { openPracticeSet: set } })} key={set.id}><span><Sparkles /></span><span><b>{set.title}</b><small>{kindLabels[set.kind] || set.kind} · {set.items?.length || 0} items</small></span><ArrowRight /></button>)}</div> : <EmptyState compact icon={Sparkles} title="Nothing generated yet" text="Choose a tool above to create your first resource." />}</section>
+        <section className="card topics-content-card"><header><div><Sparkles /><span><b>Generated material</b><small>{topicSets.length} saved</small></span></div></header>{topicSets.length ? <div className="topics-resource-list">{topicSets.map(set => <button onClick={() => set.kind === 'topic_summary' ? setModal({ type: 'summary-view', set }) : navigate('/practice', { state: { openPracticeSet: set } })} key={set.id}><span>{set.kind === 'topic_summary' ? <CircleHelp /> : <Sparkles />}</span><span><b>{set.title}</b><small>{kindLabels[set.kind] || set.kind}{set.kind !== 'topic_summary' ? ` · ${set.items?.length || 0} items` : ''}</small></span><ArrowRight /></button>)}</div> : <EmptyState compact icon={Sparkles} title="Nothing generated yet" text="Choose a tool above to create your first resource." />}</section>
       </div>
-      {modal && <TopicModal initial={modal.id ? modal : null} subjects={subjects} onClose={() => setModal(null)} onSave={saveTopic} />}
+      {modal?.type === 'summary' && <TopicSummaryModal topic={selected} documents={topicDocuments} onClose={() => setModal(null)} onGenerated={async result => { await refresh(); setModal({ type: 'summary-view', set: result.practiceSet }); notify('Summary saved to this topic.') }} />}
+      {modal?.type === 'summary-view' && <TopicSummaryView topic={selected} set={modal.set} onClose={() => setModal(null)} />}
+      {modal && !['summary', 'summary-view'].includes(modal.type) && <TopicModal initial={modal.id ? modal : null} subjects={subjects} onClose={() => setModal(null)} onSave={saveTopic} />}
     </section>
   }
 
@@ -117,4 +122,23 @@ function TopicModal({ initial, subjects, onClose, onSave }) {
   const [saving, setSaving] = useState(false)
   const submit = async event => { event.preventDefault(); setSaving(true); try { await onSave(draft) } finally { setSaving(false) } }
   return <Modal title={initial ? 'Edit topic' : 'Create a topic'} description="A topic groups your uploads, quizzes, flashcards, visual guides, mock exams and Quizz Shows." onClose={onClose}><form className="modal-form" onSubmit={submit}><Field label="Topic name"><input autoFocus required maxLength="180" value={draft.title} onChange={event => setDraft({ ...draft, title: event.target.value })} placeholder="e.g. Cell division" /></Field><Field label="Subject"><select value={draft.subject_id || ''} onChange={event => setDraft({ ...draft, subject_id: event.target.value })}><option value="">No subject</option>{subjects.map(subject => <option value={subject.id} key={subject.id}>{subject.name}</option>)}</select></Field><Field label="Description or goal" hint="Optional"><textarea maxLength="1000" value={draft.description} onChange={event => setDraft({ ...draft, description: event.target.value })} placeholder="What do you need to understand or prepare for?" /></Field><Button className="full" loading={saving}>{initial ? 'Save topic' : 'Create topic'}</Button></form></Modal>
+}
+
+function TopicSummaryModal({ topic, documents, onClose, onGenerated }) {
+  const [draft, setDraft] = useState({ question: '', documentId: '', customInstructions: '' })
+  const [loading, setLoading] = useState(false), [error, setError] = useState('')
+  const submit = async event => {
+    event.preventDefault(); setLoading(true); setError('')
+    try {
+      const result = await generateExplanation({ topicId: topic.id, subjectId: topic.subject_id || null, topic: topic.title, question: draft.question.trim(), documentId: draft.documentId || null, customInstructions: draft.customInstructions.trim(), saveToTopic: true })
+      await onGenerated(result)
+    } catch (problem) { setError(problem.message || 'The summary could not be generated.') }
+    finally { setLoading(false) }
+  }
+  return <Modal title="Explain something" description={`Ask about a specific part of ${topic.title} that does not make sense yet.`} onClose={onClose} wide><form onSubmit={submit}><Field label="What don’t you understand?" hint="Be as specific as you can — a concept, step, formula or question."><textarea autoFocus required minLength={3} maxLength={1200} value={draft.question} onChange={event => setDraft({ ...draft, question: event.target.value })} placeholder="e.g. I don’t understand why completing the square changes the equation into vertex form." /></Field><Field label="Use material from this topic" hint="Optional — choose a file when the explanation should follow your class material."><select value={draft.documentId} onChange={event => setDraft({ ...draft, documentId: event.target.value })}><option value="">No file — explain from the topic</option>{documents.map(document => <option value={document.id} key={document.id}>{document.name}</option>)}</select></Field><Field label="Your prompt" hint="Optional — choose the style or depth of the explanation."><textarea maxLength={1600} value={draft.customInstructions} onChange={event => setDraft({ ...draft, customInstructions: event.target.value })} placeholder="e.g. Use very simple language, a real-life analogy and one short worked example." /></Field>{error && <p className="ai-error">{error}</p>}<Button className="full" loading={loading}><Sparkles /> Generate and save summary</Button></form></Modal>
+}
+
+function TopicSummaryView({ topic, set, onClose }) {
+  const summary = set?.items?.[0] || {}
+  return <Modal title={set?.title || 'Topic summary'} description={`Saved in ${topic.title}`} onClose={onClose} wide><article className="topic-summary-result"><small>WHAT YOU ASKED</small><h3>{set?.config?.question || topic.title}</h3><div>{summary.answer || 'This summary is unavailable.'}</div>{summary.sources?.length > 0 && <p><FileText /> Based on: {summary.sources.join(' · ')}</p>}</article><Button className="full" onClick={onClose}>Done</Button></Modal>
 }

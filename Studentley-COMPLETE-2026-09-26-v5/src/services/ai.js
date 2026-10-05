@@ -30,6 +30,7 @@ function targetFor(operation, input, result) {
   if (operation === 'generateStudyPlan') return { path: '/study-plan' }
   if (operation === 'analyzeProgress') return { path: '/practice', state: { openPracticeTab: 'results' } }
   if (operation === 'markMockExam') return { path: '/practice', state: { openPracticeSetId: input.practiceSetId } }
+  if (operation === 'generateExplanation' && result?.practiceSet && input.topicId) return { path: '/study-plan', state: { openStudyTab: 'topics', openTopicId: input.topicId } }
   return null
 }
 

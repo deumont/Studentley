@@ -134,7 +134,7 @@ Formatting rules are strict. Set answer_lines to 0 for multiple_choice, matching
   }
   if (operation === 'generateVisualExplanation') return `${common} Create a clear, easy visual explanation guide about ${input.topic || 'the selected material'} for ${input.level || context.profile?.grade_year || context.profile?.school_system || 'the student’s level'}. ${context.documents?.length ? 'Use the selected uploaded material as the factual source.' : 'Use reliable, stable curriculum knowledge for the named topic.'} Use short sentences, simple words, one concept at a time, and a helpful worked example in every section. Produce 4-7 sections. Every section must specify a genuinely useful visual selected from process, cycle, comparison, bar_chart, line_graph, coordinate_graph, labeled_diagram or timeline. Use labels and numeric values that make the chosen graph or diagram meaningful; do not fabricate measured data, and label illustrative values as examples. Use steps for process, cycle, diagram and timeline visuals. Include one quick review question and answer per section. The final result will be rendered as a colorful multi-page infographic PDF, so keep paragraphs concise and make visual titles, labels and takeaways self-contained. Visual style: ${input.visualStyle || 'Colorful infographic'}.`
   if (operation === 'generateStudyPlan') return `${common} Build a realistic seven-day study plan beginning ${input.weekStart}. Every study topic and activity must be grounded in the selected uploaded documents; combine overlapping material sensibly and do not add unsupported topics. Use ISO 8601 starts_at values in ${context.profile?.timezone || 'the student timezone'}, avoid past dates, and respect the supplied timetable, exams and existing study sessions. Daily target: ${Number(input.dailyMinutes) || context.profile?.daily_study_minutes || 45} minutes. Preferred session length: ${Number(input.sessionMinutes) || 45} minutes. Study approach: ${input.studyApproach || 'Balanced'}. Priority focus: ${input.focus || 'upcoming exams and weaker areas'}.`
-  if (operation === 'generateExplanation') return `${common} Give a clear, structured explanation of ${input.topic || 'the selected topic'} based only on the selected study material. Teach it step by step, include one worked example when appropriate, and finish with three quick self-check questions. Keep it age-appropriate and cite the supplied filenames in sources.`
+  if (operation === 'generateExplanation') return `${common} The broader study topic is ${input.topic || context.topic?.title || 'the selected topic'}. Explain and summarize this specific thing the student does not understand: "${String(input.question || input.topic || 'the selected concept').trim().slice(0, 1200)}". ${context.documents?.length ? 'Use the selected study material as the factual source and cite its filenames in sources.' : 'No file was selected, so use reliable, stable curriculum knowledge and leave sources empty.'} Teach it step by step in clear age-appropriate language, define necessary terms, use a helpful analogy when appropriate, include one short worked example, and finish with a compact takeaway. Do not pad the answer or repeat the question.`
   if (operation === 'analyzeProgress') return `${common} Analyze the supplied completed sessions and practice results. Be encouraging but honest. Give concrete strengths, focus areas, and next steps. If data is sparse, say so.`
   if (operation === 'markMockExam') return `${common} Mark the uploaded completed mock examination against the exact generated paper and mark scheme included in context. Read handwriting or typed answers carefully. Award marks question by question only when the submitted answer earns the corresponding marking point. Do not invent an answer when writing is blank, cropped, illegible or absent; award zero for that part and explain why. Respect method marks and valid alternative reasoning when the mark scheme allows them. Return feedback for every numbered question, concise strengths, and the highest-priority improvements. The sum of awarded_marks in question_feedback must equal earned_marks. total_marks must equal the generated paper total. score_percent must equal earned_marks / total_marks * 100, rounded to one decimal place.`
   return `${common} Complete the requested study task and cite supplied filenames in sources.`
@@ -241,6 +241,24 @@ async function persistResult(db, userId, operation, input, context, result) {
     if (error) throw error
     return result
   }
+  if (operation === 'generateExplanation' && input.saveToTopic && context.topic?.id) {
+    const question = String(input.question || input.topic || context.topic.title).trim().slice(0, 1200)
+    const shortQuestion = question.length > 105 ? `${question.slice(0, 102).trim()}…` : question
+    const documentIds = (context.documents || []).map(item => item.id)
+    const practiceRow = {
+      user_id: userId,
+      subject_id: input.subjectId || context.topic.subject_id || context.document?.subject_id || null,
+      topic_id: context.topic.id,
+      document_id: context.document?.id || null,
+      title: shortQuestion || `${context.topic.title} summary`,
+      kind: 'topic_summary',
+      config: { topic: context.topic.title, topicId: context.topic.id, question, documentIds, customInstructions: input.customInstructions || '' },
+      items: [{ answer: String(result.answer || '').slice(0, 16000), sources: Array.isArray(result.sources) ? result.sources.slice(0, 10) : [] }],
+    }
+    const { data, error } = await db.from('practice_sets').insert(practiceRow).select().single()
+    if (error) throw error
+    return { ...result, practiceSet: data }
+  }
   if (operation === 'analyzeTimetable') {
     const { data: existing = [], error: existingError } = await db.from('timetable_entries').select('subject_id,day_of_week,start_time,end_time').eq('user_id', userId)
     if (existingError) throw existingError
@@ -346,7 +364,7 @@ export default async function handler(request, response) {
     if (documentOperations.has(operation) && !input.documentId) return response.status(400).json({ error: 'Choose a document first.' })
     if (operation === 'markMockExam' && (!input.practiceSetId || !input.documentId)) return response.status(400).json({ error: 'Choose a completed exam file to mark.' })
     if (operation === 'generateStudyPlan' && !hasDocuments) return response.status(400).json({ error: 'Upload and choose study material before creating a personalized plan.' })
-    if (operation === 'generateExplanation' && !hasDocuments) return response.status(400).json({ error: 'Choose study material before generating an explanation.' })
+    if (operation === 'generateExplanation' && !hasDocuments && !input.topicId && !input.topic?.trim()) return response.status(400).json({ error: 'Choose study material or a topic before generating an explanation.' })
     db = serviceClient()
     const metric = metricFor(operation)
     const profile = await getProfileAndUsage(db, user.id, metric)
