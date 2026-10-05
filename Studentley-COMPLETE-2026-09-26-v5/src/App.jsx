@@ -21,7 +21,6 @@ import RivalsLayout from './components/RivalsLayout'
 import RivalsDashboard, { FriendRivals, RankedRivals, RivalMatch, RivalQuizLibrary } from './pages/Rivals'
 import StudyPartyHome, { StudyPartyRoom } from './pages/StudyParty'
 import ActiveQuizShowRejoin from './components/ActiveQuizShowRejoin'
-import SoundEffects from './components/SoundEffects'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile, workspaceLoaded } = useApp()
@@ -49,7 +48,6 @@ export default function App() {
   const gameMode = location.pathname.startsWith('/quiz-show/')
   return <>
     <SeoManager />
-    <SoundEffects />
     <RouteTransition pathname={location.pathname} />
     <Routes>
       <Route path="/" element={<Landing />} />
