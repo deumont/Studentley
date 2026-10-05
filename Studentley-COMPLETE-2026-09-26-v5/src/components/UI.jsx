@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { AlertCircle, Crown, LoaderCircle, Sparkles, X } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { profilePictureUrl } from '../lib/data'
+import { playSound } from '../lib/soundEffects'
 
 export function Button({ variant = 'primary', className = '', loading, children, ...props }) {
   return <button className={`button ${variant} ${className}`} disabled={loading || props.disabled} {...props}>{loading && <LoaderCircle className="spin" size={17} />}{children}</button>
@@ -85,8 +86,10 @@ export function LeaderboardPodium({ entries = [], tone = 'league' }) {
 }
 
 export function Modal({ title, description, onClose, children, wide = false }) {
-  useEffect(() => { const close = e => e.key === 'Escape' && onClose(); document.addEventListener('keydown', close); return () => document.removeEventListener('keydown', close) }, [onClose])
-  return <div className="modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && onClose()}><section className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={onClose} aria-label="Close"><X /></button><h2 id="modal-title">{title}</h2>{description && <p className="muted">{description}</p>}{children}</section></div>
+  useEffect(() => { playSound('open') }, [])
+  const closeModal = () => { playSound('close'); onClose() }
+  useEffect(() => { const close = e => e.key === 'Escape' && closeModal(); document.addEventListener('keydown', close); return () => document.removeEventListener('keydown', close) }, [onClose])
+  return <div className="modal-backdrop" role="presentation" onMouseDown={e => e.target === e.currentTarget && closeModal()}><section className={`modal ${wide ? 'wide' : ''}`} role="dialog" aria-modal="true" aria-labelledby="modal-title"><button className="modal-close" onClick={closeModal} aria-label="Close"><X /></button><h2 id="modal-title">{title}</h2>{description && <p className="muted">{description}</p>}{children}</section></div>
 }
 
 export function UpgradeModal({ feature, plan = 'Plus', onClose }) {
