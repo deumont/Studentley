@@ -251,8 +251,8 @@ async function persistResult(db, userId, operation, input, context, result) {
       topic_id: context.topic.id,
       document_id: context.document?.id || null,
       title: shortQuestion || `${context.topic.title} summary`,
-      kind: 'topic_summary',
-      config: { topic: context.topic.title, topicId: context.topic.id, question, documentIds, customInstructions: input.customInstructions || '' },
+      kind: 'visual_explanation',
+      config: { resourceType: 'topic_summary', topic: context.topic.title, topicId: context.topic.id, question, documentIds, customInstructions: input.customInstructions || '' },
       items: [{ answer: String(result.answer || '').slice(0, 16000), sources: Array.isArray(result.sources) ? result.sources.slice(0, 10) : [] }],
     }
     const { data, error } = await db.from('practice_sets').insert(practiceRow).select().single()
