@@ -1,4 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
+import { createHash } from 'node:crypto'
 import { requireUser } from './_auth.js'
 
 export const config = { maxDuration: 60 }
@@ -13,6 +14,8 @@ const DOUBLE_OFFER_MS = 25000
 const DOUBLE_QUESTION_SECONDS = 20
 const SPECIAL_CHOICE_MS = 25000
 const WHEEL_SPIN_MS = 7000
+const QUESTION_OPEN_DELAY_MS = 2500
+const SYNC_FRESH_MS = 8000
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 const QUESTION_COUNTDOWN_PREFIX = '__quizz_show_countdown__:'
 const DOUBLE_OFFER_PREFIX = '__quizz_show_double_offer__:'
@@ -24,6 +27,9 @@ const SWAP_RESULT_PREFIX = '__quizz_show_swap_result__:'
 const WHEEL_OFFER_PREFIX = '__quizz_show_wheel_offer__:'
 const WHEEL_SPINNING_PREFIX = '__quizz_show_wheel_spinning__:'
 const WHEEL_RESULT_PREFIX = '__quizz_show_wheel_result__:'
+const PAUSE_VOTE_PREFIX = '__quizz_show_pause_vote__:'
+const PAUSED_PREFIX = '__quizz_show_paused__:'
+const RESUME_PREFIX = '__quizz_show_resume__:'
 
 function serviceClient() {
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) throw Object.assign(new Error('Supabase server settings are missing.'), { status: 503 })
@@ -63,13 +69,40 @@ const wheelState = party => {
   }
   return null
 }
+const pauseState = party => {
+  for (const [phase, prefix] of [['pause_vote', PAUSE_VOTE_PREFIX], ['paused', PAUSED_PREFIX], ['resume', RESUME_PREFIX]]) {
+    const payload = markerPayload(party, prefix)
+    if (payload) return { phase, prefix, payload }
+  }
+  return null
+}
 const publicHostMessage = party => isQuestionIntro(party)
   ? String(party.host_message).slice(QUESTION_INTRO_PREFIX.length)
   : isQuestionCountdown(party)
     ? String(party.host_message).slice(QUESTION_COUNTDOWN_PREFIX.length)
-    : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || party.host_message
+    : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || pauseState(party)?.payload?.message || party.host_message
 const requiresBuzzer = question => Boolean(question?.swap_round) || normalizedRoundType(question?.round_type) === 'buzzer'
 const liveQuestionTimeLimit = question => requiresBuzzer(question) ? Math.max(45, playableTimeLimit(question)) : playableTimeLimit(question)
+const naturalNameList = names => names.length < 2 ? names[0] || '' : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
+const stateSyncToken = party => createHash('sha1').update([party.id, party.status, party.phase, party.current_question ?? 'none', party.phase === 'question' ? 'live-question' : party.host_message].join('|')).digest('hex').slice(0, 18)
+const partyPresence = party => party?.questions?.[0]?._show_presence || {}
+const playerSync = (party, userId) => partyPresence(party)[userId] || {}
+const playerIsSynchronized = (party, player, token, now = Date.now()) => playerSync(party, player.user_id).token === token && now - new Date(player.joined_at || 0).getTime() <= SYNC_FRESH_MS
+
+async function synchronizationStatus(db, party, players = null, profiles = null) {
+  const partyPlayers = players || await getPartyPlayers(db, party.id)
+  const profileMap = profiles || await getProfiles(db, partyPlayers.map(player => player.user_id))
+  const token = stateSyncToken(party)
+  const now = Date.now()
+  const waiting = partyPlayers.filter(player => !playerIsSynchronized(party, player, token, now)).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  const waitingVoice = partyPlayers.filter(player => playerSync(party, player.user_id).voice_done_token !== token).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  return { token, all_ready: partyPlayers.length > 0 && waiting.length === 0, waiting, all_voice_ready: partyPlayers.length > 0 && waitingVoice.length === 0, waiting_voice: waitingVoice }
+}
+
+async function synchronizationWaitResponse(db, party, userId, requireVoice = false) {
+  const synchronized = await synchronizationStatus(db, party)
+  return { party: await serializeParty(db, party, userId), waiting_for_sync: true, waiting_for: (requireVoice ? synchronized.waiting_voice : synchronized.waiting).map(player => player.display_name) }
+}
 
 async function getPartyRecord(db, identifier) {
   const query = db.from('rival_study_parties').select('*')
@@ -99,6 +132,7 @@ function playerName(profile) {
 
 function publicQuestion(question, reveal, answersVisible) {
   if (!question) return null
+  const introductions = ['Here we go!', 'Eyes on the screen!', 'This one could change everything!', 'Get ready—this is a good one!', 'Let us see who is quickest!']
   return {
     round_type: normalizedRoundType(question.round_type),
     prompt: question.prompt,
@@ -108,7 +142,8 @@ function publicQuestion(question, reveal, answersVisible) {
     topic: question.topic,
     difficulty: question.difficulty,
     time_limit: liveQuestionTimeLimit(question),
-    points: question.points,
+    points: 200,
+    voice_prompt: `${introductions[String(question.prompt || '').length % introductions.length]} ${question.prompt}`,
     directed: false,
     swap_round: Boolean(question.swap_round),
     is_final: Boolean(question.is_final),
@@ -155,6 +190,8 @@ async function serializeParty(db, party, userId) {
   const double = doubleState(party)
   const swap = swapState(party)
   const wheel = wheelState(party)
+  const pause = pauseState(party)
+  const sync = await synchronizationStatus(db, party, players, profiles)
   const publicPlayers = players.map(player => {
     const profile = profiles.get(player.user_id)
     const total = Number(player.correct_answers || 0) + Number(player.wrong_answers || 0)
@@ -195,8 +232,8 @@ async function serializeParty(db, party, userId) {
   const correctAnswers = answers.filter(answer => answer.correct)
   const correctNames = correctAnswers.map(answer => playerName(profiles.get(answer.user_id)))
   const correctPoints = correctAnswers.reduce((highest, answer) => Math.max(highest, Number(answer.points || 0)), 0)
-  const winners = correctNames.join(', ')
-  const revealStyle = Math.abs(Number(party.current_question || 0)) % 6
+  const winners = naturalNameList(correctNames)
+  const revealStyle = Math.abs(Number(party.current_question || 0)) % 10
   const revealAnnouncement = reveal && !double
     ? wheel?.phase === 'wheel_result'
       ? wheel.payload.message
@@ -208,6 +245,10 @@ async function serializeParty(db, party, userId) {
           `Absolutely clinical from ${winners}! ${question?.correct_answer} was the answer, and those points are locked in.`,
           `${winners} came to play! The answer was ${question?.correct_answer}. The leaderboard had better pay attention.`,
           `That was sharp! ${winners} score${correctPoints ? ` up to ${correctPoints} points` : ''}. ${question?.correct_answer} is correct.`,
+          `Boom! ${winners} absolutely smashed it. ${question?.correct_answer} is right, and the race is heating up!`,
+          `Now that is how you play a Quizz Show! ${winners} got ${question?.correct_answer} and banked the points.`,
+          `The studio is alive! ${winners} found ${question?.correct_answer}. What a response!`,
+          `Spectacular! ${winners} read that perfectly. ${question?.correct_answer} sends the scoreboard moving!`,
         ][revealStyle]
       : [
           `No one got it this time. The correct answer was ${question?.correct_answer}.`,
@@ -216,6 +257,10 @@ async function serializeParty(db, party, userId) {
           `Silence in the studio! ${question?.correct_answer} was the answer. Let us pretend that round never happened.`,
           `The points have left the building. Nobody found ${question?.correct_answer} this time.`,
           `Ouch. The scoreboard did not move. The answer was ${question?.correct_answer}—wake up for the next one!`,
+          `The question wins that battle! ${question?.correct_answer} was the answer. Reset and come back swinging!`,
+          `Nobody takes the points! We needed ${question?.correct_answer}. The next question is your comeback chance!`,
+          `That was a proper trap, and everyone walked into it. ${question?.correct_answer} was correct!`,
+          `The scoreboard survives untouched! ${question?.correct_answer} was the answer. Let us turn up the energy!`,
         ][revealStyle])
     : doubleReveal
       ? double.payload.message
@@ -240,7 +285,7 @@ async function serializeParty(db, party, userId) {
     difficulty: party.difficulty,
     game_mode: party.game_mode,
     status: party.status,
-    phase: double?.phase || wheel?.phase || (questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
+    phase: pause?.phase || double?.phase || wheel?.phase || (questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
     max_players: party.max_players,
     question_count: party.question_count,
     question_number: party.used_question_indexes?.length || 0,
@@ -250,12 +295,25 @@ async function serializeParty(db, party, userId) {
     buzzed_by: party.buzzed_by,
     attempted_user_ids: party.attempted_user_ids || [],
     phase_deadline: party.phase_deadline,
+    question_opens_at: question?._started_at || null,
+    server_time: new Date().toISOString(),
     host_message: publicHostMessage(party),
     reveal_announcement: revealAnnouncement,
     current_user_result: currentUserResult,
     double_or_nothing: double ? { ...double.payload, phase: double.phase, is_target: double.payload.target_user_id === userId } : null,
     swap_result: swap,
     wheel_event: wheel ? { ...wheel.payload, outcome: wheel.phase === 'wheel_result' ? wheel.payload.outcome : null, phase: wheel.phase, is_target: wheel.payload.target_user_id === userId } : null,
+    pause: pause ? {
+      phase: pause.phase,
+      requested_by_name: pause.payload.requested_by_name,
+      message: pause.payload.message,
+      voted: (pause.payload.votes || []).includes(userId),
+      ready: (pause.payload.ready_user_ids || []).includes(userId),
+      vote_count: (pause.payload.votes || []).length,
+      ready_count: (pause.payload.ready_user_ids || []).length,
+      player_count: players.length,
+    } : null,
+    sync: { token: sync.token, all_ready: sync.all_ready, all_voice_ready: sync.all_voice_ready, waiting_for: sync.waiting.map(player => player.display_name), waiting_for_voice: sync.waiting_voice.map(player => player.display_name) },
     winner_user_id: party.winner_user_id,
     winner_team: party.winner_team,
     started_at: party.started_at,
@@ -359,7 +417,7 @@ async function generateQuestions(db, userId, input, document) {
       topic: safeText(question.topic || input.topic || input.subject, 100),
       difficulty: DIFFICULTIES.includes(question.difficulty) ? question.difficulty : 'Standard',
       time_limit: clamp(question.time_limit, 20, 55),
-      points: clamp(question.points, 50, 200),
+      points: 200,
       directed: false,
       is_final: index === count - 1,
       follow_up_prompt: safeText(question.follow_up_prompt, 900),
@@ -439,6 +497,45 @@ async function joinParty(db, userId, input) {
   return { party: await serializeParty(db, party, userId) }
 }
 
+async function syncParty(db, userId, input) {
+  let party = await getPartyRecord(db, input.partyId)
+  const players = await getPartyPlayers(db, party.id)
+  const player = players.find(item => item.user_id === userId)
+  if (!player) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
+  const requestedToken = safeText(input.token, 80)
+  let newlySynchronized = false
+  if (requestedToken === stateSyncToken(party)) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      const token = stateSyncToken(party)
+      if (requestedToken !== token) break
+      const previousSync = playerSync(party, userId)
+      const wasSynchronized = previousSync.token === token
+      const needsPresenceWrite = !wasSynchronized || (input.voiceDone && previousSync.voice_done_token !== token)
+      if (!needsPresenceWrite) break
+      const presence = { ...partyPresence(party), [userId]: { token, voice_done_token: input.voiceDone ? token : previousSync.voice_done_token || null } }
+      const questions = party.questions.map((question, index) => index === 0 ? { ...question, _show_presence: presence } : question)
+      const { data, error } = await db.from('rival_study_parties').update({ questions }).eq('id', party.id).eq('updated_at', party.updated_at).select().maybeSingle()
+      if (error) throw error
+      if (data) { party = data; newlySynchronized = !wasSynchronized; break }
+      party = await getPartyRecord(db, party.id)
+    }
+    const { error: heartbeatError } = await db.from('rival_study_party_players').update({ joined_at: new Date().toISOString() }).eq('party_id', party.id).eq('user_id', userId)
+    if (heartbeatError) throw heartbeatError
+    const synchronized = await synchronizationStatus(db, party)
+    const question = party.questions?.[party.current_question]
+    const startsAt = question?._started_at ? new Date(question._started_at).getTime() : 0
+    if (newlySynchronized && synchronized.all_ready && party.phase === 'question' && startsAt && startsAt < Date.now() + 900) {
+      const adjustedStart = Date.now() + 1200
+      const durationSeconds = doubleState(party)?.phase === 'double_question' ? DOUBLE_QUESTION_SECONDS : liveQuestionTimeLimit(question)
+      const questions = party.questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(adjustedStart).toISOString() } : item)
+      const { data, error: updateError } = await db.from('rival_study_parties').update({ questions, phase_deadline: new Date(adjustedStart + durationSeconds * 1000).toISOString() }).eq('id', party.id).eq('phase', 'question').eq('updated_at', party.updated_at).select().maybeSingle()
+      if (updateError) throw updateError
+      if (data) party = data
+    }
+  }
+  return { party: await serializeParty(db, party, userId) }
+}
+
 function chooseNextQuestion(party, players) {
   const questions = Array.isArray(party.questions) ? party.questions : []
   const used = party.used_question_indexes || []
@@ -455,7 +552,14 @@ function chooseNextQuestion(party, players) {
 
 function roundIntro(question) {
   if (question.swap_round) return 'Score Swap Round! Everyone can buzz. The winner must swap their total score with another player.'
-  return `${roundName(question.round_type)}! ${question.is_final ? 'Double points are live.' : `${question.difficulty} difficulty.`}`
+  if (question.is_final) return `Final question! Everything comes down to this ${roundName(question.round_type)}.`
+  const openings = [
+    `${roundName(question.round_type)} is coming in hot!`,
+    `Brace yourselves—next up is ${roundName(question.round_type)}!`,
+    `The energy is rising! It is time for ${roundName(question.round_type)}!`,
+    `No relaxing now—${roundName(question.round_type)} is ready!`,
+  ]
+  return `${openings[String(question.prompt || '').length % openings.length]} ${question.difficulty} difficulty.`
 }
 
 async function startParty(db, userId, input) {
@@ -463,6 +567,7 @@ async function startParty(db, userId, input) {
   if (party.host_user_id !== userId || party.status !== 'waiting') throw Object.assign(new Error('Only the host can start this Quizz Show.'), { status: 403 })
   const players = await getPartyPlayers(db, party.id)
   if (players.length < 2) throw Object.assign(new Error('At least two students are needed.'), { status: 400 })
+  if (!(await synchronizationStatus(db, party, players)).all_ready) return synchronizationWaitResponse(db, party, userId)
   const next = chooseNextQuestion(party, players)
   if (!next) throw Object.assign(new Error('This Quizz Show has no questions.'), { status: 409 })
   const now = new Date()
@@ -482,6 +587,8 @@ async function startQuestionCountdown(db, userId, input) {
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can start the countdown.'), { status: 403 })
   const double = doubleState(party)
   if (party.status !== 'active' || (!isQuestionIntro(party) && double?.phase !== 'double_intro')) return { party: await serializeParty(db, party, userId) }
+  const synchronized = await synchronizationStatus(db, party)
+  if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
   const visibleMessage = publicHostMessage(party)
   const { data, error } = await db.from('rival_study_parties').update({
     phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(),
@@ -498,11 +605,15 @@ async function openQuestion(db, userId, input) {
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can reveal the answers.'), { status: 403 })
   const double = doubleState(party)
   if (party.status !== 'active' || (!isQuestionCountdown(party) && double?.phase !== 'double_countdown')) return { party: await serializeParty(db, party, userId) }
+  if (!(await synchronizationStatus(db, party)).all_ready) return synchronizationWaitResponse(db, party, userId)
   const question = party.questions?.[party.current_question]
   if (!question) throw Object.assign(new Error('The next question is missing.'), { status: 409 })
+  const opensAt = Date.now() + QUESTION_OPEN_DELAY_MS
+  const questions = party.questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(opensAt).toISOString() } : item)
   const { data, error } = await db.from('rival_study_parties').update({
     phase: 'question',
-    phase_deadline: new Date(Date.now() + (double?.phase === 'double_countdown' ? DOUBLE_QUESTION_SECONDS : liveQuestionTimeLimit(question)) * 1000).toISOString(),
+    questions,
+    phase_deadline: new Date(opensAt + (double?.phase === 'double_countdown' ? DOUBLE_QUESTION_SECONDS : liveQuestionTimeLimit(question)) * 1000).toISOString(),
     host_message: double?.phase === 'double_countdown'
       ? markerMessage(DOUBLE_ACTIVE_PREFIX, { ...double.payload, message: `${double.payload.target_name}, Double or Nothing is live!` })
       : 'Answers are open!',
@@ -701,12 +812,105 @@ async function finishDoubleRound(db, party, submittedAnswer = '') {
   return getPartyRecord(db, party.id)
 }
 
-async function advanceParty(db, party) {
+function pauseAllowed(party) {
+  const passiveIntermission = party.phase === 'intermission'
+    && !doubleState(party)
+    && !wheelState(party)
+    && !pauseState(party)
+    && !isQuestionIntro(party)
+    && !isQuestionCountdown(party)
+  return party.status === 'active' && (party.phase === 'reveal' || passiveIntermission)
+}
+
+async function requestPause(db, userId, input) {
+  const party = await getPartyRecord(db, input.partyId)
+  if (!pauseAllowed(party)) throw Object.assign(new Error('A break can only be requested after an answer and before the next question.'), { status: 409 })
+  const players = await getPartyPlayers(db, party.id)
+  const requester = players.find(player => player.user_id === userId)
+  if (!requester) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
+  const profiles = await getProfiles(db, [userId])
+  const name = playerName(profiles.get(userId))
+  const payload = {
+    requested_by: userId,
+    requested_by_name: name,
+    votes: [userId],
+    ready_user_ids: [],
+    return_phase: party.phase,
+    return_host_message: party.host_message,
+    message: `${name} wants a quick break. Is everyone okay with a short pause?`,
+  }
+  const { data, error } = await db.from('rival_study_parties').update({
+    phase: 'intermission', phase_deadline: null, host_message: markerMessage(PAUSE_VOTE_PREFIX, payload),
+  }).eq('id', party.id).eq('phase', party.phase).eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return { party: await serializeParty(db, data || await getPartyRecord(db, party.id), userId) }
+}
+
+async function votePause(db, userId, input) {
+  const party = await getPartyRecord(db, input.partyId)
+  const state = pauseState(party)
+  if (state?.phase !== 'pause_vote') throw Object.assign(new Error('That break vote is no longer open.'), { status: 409 })
+  const players = await getPartyPlayers(db, party.id)
+  if (!players.some(player => player.user_id === userId)) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
+  const profiles = await getProfiles(db, [userId])
+  const name = playerName(profiles.get(userId))
+  let prefix = PAUSE_VOTE_PREFIX
+  let payload
+  if (!input.accept) {
+    prefix = RESUME_PREFIX
+    payload = { ...state.payload, message: `${name} wants to keep the momentum going. No break this time—let us jump straight back in!` }
+  } else {
+    const votes = [...new Set([...(state.payload.votes || []), userId])]
+    const approved = players.every(player => votes.includes(player.user_id))
+    prefix = approved ? PAUSED_PREFIX : PAUSE_VOTE_PREFIX
+    payload = {
+      ...state.payload,
+      votes,
+      ready_user_ids: [],
+      message: approved
+        ? `Break approved! Take a breath, grab some water, and press Ready when you want the show to continue.`
+        : state.payload.message,
+    }
+  }
+  const { data, error } = await db.from('rival_study_parties').update({ host_message: markerMessage(prefix, payload) })
+    .eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return { party: await serializeParty(db, data || await getPartyRecord(db, party.id), userId) }
+}
+
+async function readyAfterPause(db, userId, input) {
+  const party = await getPartyRecord(db, input.partyId)
+  const state = pauseState(party)
+  if (state?.phase !== 'paused') throw Object.assign(new Error('This break has already ended.'), { status: 409 })
+  const players = await getPartyPlayers(db, party.id)
+  if (!players.some(player => player.user_id === userId)) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
+  const readyUserIds = [...new Set([...(state.payload.ready_user_ids || []), userId])]
+  const everybodyReady = players.every(player => readyUserIds.includes(player.user_id))
+  const payload = {
+    ...state.payload,
+    ready_user_ids: readyUserIds,
+    message: everybodyReady
+      ? `And we are back! Everyone is ready, the energy is up, and the Quizz Show continues now!`
+      : state.payload.message,
+  }
+  const prefix = everybodyReady ? RESUME_PREFIX : PAUSED_PREFIX
+  const { data, error } = await db.from('rival_study_parties').update({ host_message: markerMessage(prefix, payload) })
+    .eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return { party: await serializeParty(db, data || await getPartyRecord(db, party.id), userId) }
+}
+
+async function advanceParty(db, party, skipSync = false) {
   if (party.status !== 'active' || !party.phase_deadline || Date.now() < new Date(party.phase_deadline).getTime()) return party
   const questions = Array.isArray(party.questions) ? party.questions : []
   const current = Number.isInteger(party.current_question) ? questions[party.current_question] : null
   const double = doubleState(party)
   const wheel = wheelState(party)
+  if (!skipSync) {
+    const synchronized = await synchronizationStatus(db, party)
+    const voiceMustFinish = party.phase === 'reveal' || isQuestionIntro(party) || double?.phase === 'double_offer' || double?.phase === 'double_intro' || double?.phase === 'double_reveal' || wheel?.phase === 'wheel_offer' || wheel?.phase === 'wheel_result'
+    if (!synchronized.all_ready || (voiceMustFinish && !synchronized.all_voice_ready)) return party
+  }
   if (party.phase === 'question' && double?.phase === 'double_question') return finishDoubleRound(db, party)
   if (party.phase === 'question') {
     const { data, error } = await db.from('rival_study_parties').update({ phase: 'reveal', phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `Time! The answer was ${current?.correct_answer || 'not submitted'}.` }).eq('id', party.id).eq('phase', 'question').select().maybeSingle()
@@ -717,12 +921,15 @@ async function advanceParty(db, party) {
     if (wheel?.phase === 'wheel_offer') return beginComebackWheelSpin(db, party)
     if (wheel?.phase === 'wheel_spinning') return finishWheelSpin(db, party)
     if (double?.phase === 'double_offer') return finishQuestionFlow(db, party)
+    const openingQuestion = double?.phase === 'double_countdown' || isQuestionCountdown(party)
+    const opensAt = openingQuestion ? Date.now() + QUESTION_OPEN_DELAY_MS : null
+    const questionsWithStart = openingQuestion ? questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(opensAt).toISOString() } : item) : questions
     const changes = double?.phase === 'double_intro'
       ? { phase: 'intermission', phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(), host_message: markerMessage(DOUBLE_COUNTDOWN_PREFIX, double.payload) }
       : double?.phase === 'double_countdown'
-        ? { phase: 'question', phase_deadline: new Date(Date.now() + DOUBLE_QUESTION_SECONDS * 1000).toISOString(), host_message: markerMessage(DOUBLE_ACTIVE_PREFIX, double.payload) }
+        ? { phase: 'question', questions: questionsWithStart, phase_deadline: new Date(opensAt + DOUBLE_QUESTION_SECONDS * 1000).toISOString(), host_message: markerMessage(DOUBLE_ACTIVE_PREFIX, double.payload) }
       : isQuestionCountdown(party)
-      ? { phase: 'question', phase_deadline: new Date(Date.now() + liveQuestionTimeLimit(current) * 1000).toISOString(), host_message: 'Answers are open!' }
+      ? { phase: 'question', questions: questionsWithStart, phase_deadline: new Date(opensAt + liveQuestionTimeLimit(current) * 1000).toISOString(), host_message: 'Answers are open!' }
       : isQuestionIntro(party)
         ? { phase: 'intermission', phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(), host_message: questionCountdownMessage(publicHostMessage(party)) }
       : { phase: 'intermission', phase_deadline: new Date(Date.now() + INTRO_FAILSAFE_MS).toISOString(), host_message: questionIntroMessage(roundIntro(current)) }
@@ -749,15 +956,31 @@ async function loadParty(db, userId, input) {
 async function continueHostPhase(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can continue the show.'), { status: 403 })
+  const pause = pauseState(party)
+  if (pause?.phase === 'resume') {
+    const synchronized = await synchronizationStatus(db, party)
+    if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
+    const { data: restored, error } = await db.from('rival_study_parties').update({
+      phase: pause.payload.return_phase || 'reveal',
+      host_message: pause.payload.return_host_message || 'The show is back!',
+      phase_deadline: new Date(0).toISOString(),
+    }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+    if (error) throw error
+    const advanced = await advanceParty(db, restored || await getPartyRecord(db, party.id), true)
+    return { party: await serializeParty(db, advanced, userId) }
+  }
   const double = doubleState(party)
   const wheel = wheelState(party)
   const isPassiveIntermission = party.phase === 'intermission'
     && !double
     && !wheel
+    && !pause
     && !isQuestionIntro(party)
     && !isQuestionCountdown(party)
   const canContinue = party.phase === 'reveal' || isPassiveIntermission
   if (!canContinue) return { party: await serializeParty(db, party, userId) }
+  const synchronized = await synchronizationStatus(db, party)
+  if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
   const advanced = await advanceParty(db, { ...party, phase_deadline: new Date(0).toISOString() })
   return { party: await serializeParty(db, advanced, userId) }
 }
@@ -769,6 +992,8 @@ async function buzz(db, userId, input) {
   if (!player) throw Object.assign(new Error('You are not in this Quizz Show.'), { status: 403 })
   const question = party.questions?.[party.current_question]
   if (party.status !== 'active' || party.phase !== 'question' || !question || !requiresBuzzer(question)) throw Object.assign(new Error('The buzzer is not open.'), { status: 409 })
+  if (!(await synchronizationStatus(db, party, players)).all_ready) throw Object.assign(new Error('Waiting for every player to reach the buzzer screen.'), { status: 409 })
+  if (question._started_at && Date.now() < new Date(question._started_at).getTime()) throw Object.assign(new Error('The round is still synchronizing.'), { status: 409 })
   if (!party.phase_deadline || Date.now() > new Date(party.phase_deadline).getTime() + 1000) throw Object.assign(new Error('Time is up for this question.'), { status: 409 })
   if ((party.attempted_user_ids || []).includes(userId)) throw Object.assign(new Error('You already attempted this question.'), { status: 409 })
   const profiles = await getProfiles(db, [userId])
@@ -779,6 +1004,10 @@ async function buzz(db, userId, input) {
     `${name} smashes the buzzer before the host can even finish! Bold move—now prove it!`,
     `That was quick! ${name} is first on the buzzer. Genius or glorious guess?`,
     `${name} could not wait another second! The spotlight is yours—will you score?`,
+    `Hold everything! ${name} has launched at that buzzer. Now give us the answer!`,
+    `Incredible speed from ${name}! The whole room is waiting—have they got it?`,
+    `${name} attacks the buzzer with absolutely no hesitation! Confidence level: enormous.`,
+    `The question is barely out and ${name} is already in! This could be brilliant!`,
   ]
   const hostMessage = reactions[Math.floor(Math.random() * reactions.length)]
   const { data, error } = await db.from('rival_study_parties').update({ buzzed_by: userId, buzzed_at: now.toISOString(), phase_deadline: new Date(now.getTime() + 12000).toISOString(), host_message: hostMessage }).eq('id', party.id).eq('phase', 'question').eq('current_question', party.current_question).is('buzzed_by', null).select().maybeSingle()
@@ -956,7 +1185,9 @@ async function submitAnswer(db, userId, input) {
   const double = doubleState(party)
   if (double?.phase === 'double_question') {
     if (double.payload.target_user_id !== userId) throw Object.assign(new Error('This Double or Nothing question belongs to another player.'), { status: 403 })
+    if (!(await synchronizationStatus(db, party, players)).all_ready) throw Object.assign(new Error('Waiting for every player to reach this question.'), { status: 409 })
     if ((party.attempted_user_ids || []).includes(userId)) throw Object.assign(new Error('Your Double or Nothing answer is already locked.'), { status: 409 })
+    if (question?._started_at && Date.now() < new Date(question._started_at).getTime()) throw Object.assign(new Error('The round is still synchronizing.'), { status: 409 })
     if (!party.phase_deadline || Date.now() > new Date(party.phase_deadline).getTime() + 1000) throw Object.assign(new Error('Time is up for this question.'), { status: 409 })
     const answer = safeText(input.answer, 240)
     if (!answer) throw Object.assign(new Error('Choose an answer first.'), { status: 400 })
@@ -965,21 +1196,19 @@ async function submitAnswer(db, userId, input) {
     return { party: await serializeParty(db, updated, userId), result: { correct: Boolean(result?.correct), points: Number(result?.delta || 0), double_or_nothing: true } }
   }
   if (party.status !== 'active' || party.phase !== 'question' || !question) throw Object.assign(new Error('Answers are closed for this question.'), { status: 409 })
+  if (!(await synchronizationStatus(db, party, players)).all_ready) throw Object.assign(new Error('Waiting for every player to reach this question.'), { status: 409 })
+  if (question._started_at && Date.now() < new Date(question._started_at).getTime()) throw Object.assign(new Error('The round is still synchronizing.'), { status: 409 })
   if (!party.phase_deadline || Date.now() > new Date(party.phase_deadline).getTime() + 1000) throw Object.assign(new Error('Time is up for this question.'), { status: 409 })
   const buzzerRequired = requiresBuzzer(question)
   if (buzzerRequired && party.buzzed_by !== userId) throw Object.assign(new Error('Buzz first before answering.'), { status: 409 })
   const answer = safeText(input.answer, 1000)
   if (!question.options?.length && answer.split(/\s+/).filter(Boolean).length !== 1) throw Object.assign(new Error('Use exactly one word for this answer.'), { status: 400 })
   const correct = answerIsCorrect(question, answer)
-  const deadline = new Date(party.phase_deadline).getTime()
-  const timeLimitMs = playableTimeLimit(question) * 1000
-  const startedAt = party.buzzed_at && buzzerRequired ? new Date(party.buzzed_at).getTime() : deadline - timeLimitMs
+  const timeLimitMs = liveQuestionTimeLimit(question) * 1000
+  const startedAt = question._started_at ? new Date(question._started_at).getTime() : new Date(party.phase_deadline).getTime() - timeLimitMs
   const responseMs = Math.max(0, Math.min(timeLimitMs, Date.now() - startedAt))
   const nextStreak = correct ? Number(player.streak || 0) + 1 : 0
-  const timeBonus = correct ? Math.max(0, Math.round(50 * (1 - responseMs / timeLimitMs))) : 0
-  const streakBonus = correct && nextStreak >= 3 ? Math.min(75, 25 * (nextStreak - 2)) : 0
-  const multiplier = question.is_final ? 2 : 1
-  const points = correct ? (Number(question.points || 100) + timeBonus + streakBonus) * multiplier : 0
+  const points = correct ? Math.max(10, Math.min(200, Math.ceil(200 * (1 - responseMs / timeLimitMs)))) : 0
   const { error: answerError } = await db.from('rival_study_party_answers').insert({ party_id: party.id, question_index: party.current_question, user_id: userId, answer, correct, points, response_ms: responseMs })
   if (answerError?.code === '23505') throw Object.assign(new Error('Your answer is already locked.'), { status: 409 })
   if (answerError) throw answerError
@@ -1012,6 +1241,10 @@ async function submitAnswer(db, userId, input) {
       `Not quite, ${name}! Brave buzz, unfortunate ending. The steal is live!`,
       `${name} went fast but not accurate. Somebody steal these points!`,
       `Oh, ${name}! The buzzer confidence was excellent; the answer was less convincing. Steal open!`,
+      `${name} brought the speed but left the answer behind! The room can steal!`,
+      `That is a no from the scoreboard, ${name}! Who wants these points?`,
+      `${name} took the gamble and the question fought back. Steal opportunity!`,
+      `Big buzzer energy, tiny accuracy! Sorry, ${name}—the steal is on!`,
     ]
     const changes = exhausted
       ? { phase: 'reveal', attempted_user_ids: attempted, phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(), host_message: `No steal this time. The answer was ${question.correct_answer}.` }
@@ -1044,12 +1277,16 @@ export default async function handler(request, response) {
     if (action === 'create') return response.status(200).json(await createParty(db, user.id, input))
     if (action === 'join') return response.status(200).json(await joinParty(db, user.id, input))
     if (action === 'get') return response.status(200).json(await loadParty(db, user.id, input))
+    if (action === 'sync') return response.status(200).json(await syncParty(db, user.id, input))
     if (action === 'continue_host') return response.status(200).json(await continueHostPhase(db, user.id, input))
     if (action === 'start') return response.status(200).json(await startParty(db, user.id, input))
     if (action === 'start_countdown') return response.status(200).json(await startQuestionCountdown(db, user.id, input))
     if (action === 'open_question') return response.status(200).json(await openQuestion(db, user.id, input))
     if (action === 'double_or_nothing') return response.status(200).json(await respondDoubleOrNothing(db, user.id, input))
     if (action === 'spin_wheel') return response.status(200).json(await spinComebackWheel(db, user.id, input))
+    if (action === 'request_pause') return response.status(200).json(await requestPause(db, user.id, input))
+    if (action === 'vote_pause') return response.status(200).json(await votePause(db, user.id, input))
+    if (action === 'pause_ready') return response.status(200).json(await readyAfterPause(db, user.id, input))
     if (action === 'buzz') return response.status(200).json(await buzz(db, user.id, input))
     if (action === 'answer') return response.status(200).json(await submitAnswer(db, user.id, input))
     if (action === 'quit') return response.status(200).json(await quitParty(db, user.id, input))

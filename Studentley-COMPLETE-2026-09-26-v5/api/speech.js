@@ -29,8 +29,8 @@ export default async function handler(request, response) {
           model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
           voice: process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx',
           input,
-          instructions: 'Use a confident, natural male voice like the main host of an exciting prime-time television quiz show for teenagers. Sound genuinely thrilled and highly energetic from the first word. Use lively momentum, bright reactions, strong emphasis, varied rhythm and a smiling delivery. Celebrate correct answers, make lead changes and comeback moments feel huge, and deliver playful light teasing when someone falls behind without ever being cruel or personal. Use only very short dramatic pauses before reveals. Keep every line punchy, clear, fast-moving and human, never robotic, monotonous, flat, shouty or overacted.',
-          speed: 1.08,
+          instructions: 'Perform as the magnetic male host of a huge live prime-time television quiz show for teenagers. Be unmistakably enthusiastic, playful and excited—not merely friendly. Vary the delivery constantly: build suspense before questions, accelerate into countdowns, explode with joy for correct answers, sound genuinely shocked by quick buzzes, make lead changes feel enormous, and turn comebacks into headline moments. Give every player name warmth and personality. When reading multiple names, connect the final two naturally with the word “and”; never read names like a comma-separated list. Use expressive pitch, smiling energy, punchy emphasis, quick reactions and brief dramatic pauses. Light teasing is welcome when someone is behind, but it must stay kind, funny and never personal. Keep the diction crisp and human, with the energy of a sports commentator crossed with a game-show host. Never sound robotic, flat, sleepy or like a navigation voice.',
+          speed: 1.1,
           response_format: 'mp3',
         }),
       })
