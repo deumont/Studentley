@@ -15,10 +15,9 @@ const DOUBLE_QUESTION_SECONDS = 20
 const SPECIAL_CHOICE_MS = 25000
 const WHEEL_SPIN_MS = 7000
 const QUESTION_OPEN_DELAY_MS = 2500
-// Mobile browsers aggressively throttle background timers. Eight seconds was
-// short enough for an otherwise connected player to be marked as missing while
-// their host audio was still downloading or playing.
-const SYNC_FRESH_MS = 45000
+// A player who stops acknowledging the live state must never hold the room.
+// Active clients refresh this well inside the ten-second grace window.
+const SYNC_FRESH_MS = 10000
 const VOICE_SYNC_FALLBACK_MS = 45000
 const SHOW_INTRO_PREFIX = '__quizz_show_welcome__:'
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
@@ -93,19 +92,22 @@ const naturalNameList = names => names.length < 2 ? names[0] || '' : names.lengt
 const stateSyncToken = party => createHash('sha1').update([party.id, party.status, party.phase, party.current_question ?? 'none', party.phase === 'question' ? 'live-question' : party.host_message].join('|')).digest('hex').slice(0, 18)
 const partyPresence = party => party?.questions?.[0]?._show_presence || {}
 const playerSync = (party, userId) => partyPresence(party)[userId] || {}
-const playerIsSynchronized = (party, player, token, now = Date.now()) => playerSync(party, player.user_id).token === token && now - new Date(player.joined_at || 0).getTime() <= SYNC_FRESH_MS
+const playerIsConnected = (player, now = Date.now()) => now - new Date(player.joined_at || 0).getTime() <= SYNC_FRESH_MS
+const playerIsSynchronized = (party, player, token) => playerSync(party, player.user_id).token === token
 
 async function synchronizationStatus(db, party, players = null, profiles = null) {
   const partyPlayers = players || await getPartyPlayers(db, party.id)
   const profileMap = profiles || await getProfiles(db, partyPlayers.map(player => player.user_id))
   const token = stateSyncToken(party)
   const now = Date.now()
-  const waiting = partyPlayers.filter(player => !playerIsSynchronized(party, player, token, now)).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  const connectedPlayers = partyPlayers.filter(player => playerIsConnected(player, now))
+  const waiting = connectedPlayers.filter(player => !playerIsSynchronized(party, player, token)).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
   const voiceWaitExpired = Date.now() - new Date(party.updated_at || party.started_at || party.created_at || 0).getTime() >= VOICE_SYNC_FALLBACK_MS
   const waitingVoice = voiceWaitExpired
     ? []
-    : partyPlayers.filter(player => playerSync(party, player.user_id).voice_done_token !== token).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
-  return { token, all_ready: partyPlayers.length > 0 && waiting.length === 0, waiting, all_voice_ready: partyPlayers.length > 0 && waitingVoice.length === 0, waiting_voice: waitingVoice }
+    : connectedPlayers.filter(player => playerSync(party, player.user_id).voice_done_token !== token).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  const disconnected = partyPlayers.filter(player => !playerIsConnected(player, now)).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  return { token, all_ready: connectedPlayers.length > 0 && waiting.length === 0, waiting, all_voice_ready: connectedPlayers.length > 0 && waitingVoice.length === 0, waiting_voice: waitingVoice, disconnected }
 }
 
 async function synchronizationWaitResponse(db, party, userId, requireVoice = false) {

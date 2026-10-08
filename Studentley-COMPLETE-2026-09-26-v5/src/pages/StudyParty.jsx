@@ -192,7 +192,7 @@ export function StudyPartyRoom() {
       try {
         await syncStudyParty(party.id, token)
       } catch { /* The normal room poll will reconnect presence. */ }
-      if (!cancelled) timer = setTimeout(acknowledge, 7000)
+      if (!cancelled) timer = setTimeout(acknowledge, 3000)
     }
     acknowledge()
     return () => { cancelled = true; clearTimeout(timer) }
