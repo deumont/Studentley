@@ -117,7 +117,7 @@ export function StudyPartyRoom() {
   const [showQuit, setShowQuit] = useState(false), [quitting, setQuitting] = useState(false)
   const [voiceEnabled, setVoiceEnabled] = useState(true), [voiceReady, setVoiceReady] = useState(false), [voiceStatus, setVoiceStatus] = useState('')
   const [isFullscreen, setIsFullscreen] = useState(Boolean(document.fullscreenElement)), [scoreChanges, setScoreChanges] = useState({}), [leadChange, setLeadChange] = useState('')
-  const [clockOffset, setClockOffset] = useState(0), [syncWaiting, setSyncWaiting] = useState('')
+  const [clockOffset, setClockOffset] = useState(0)
   const audioContextRef = useRef(null), audioSourceRef = useRef(null), speechRequestRef = useRef(null), spokenRef = useRef(new Set())
   const speechQueueRef = useRef(Promise.resolve()), previousBoardRef = useRef({}), previousRanksRef = useRef({}), lastBoardKeyRef = useRef('')
   const loadInFlightRef = useRef(false), loadedOnceRef = useRef(false), syncEpochRef = useRef(0), mountedRef = useRef(true)
@@ -143,18 +143,11 @@ export function StudyPartyRoom() {
     }
   }, [id])
 
-  const runSynchronizedTransition = useCallback(async (request, label) => {
-    while (mountedRef.current) {
-      syncEpochRef.current += 1
-      const result = await request()
-      if (!mountedRef.current) return result
-      setParty(result.party)
-      if (!result.waiting_for_sync) { setSyncWaiting(''); return result }
-      const names = result.waiting_for || result.party?.sync?.waiting_for || []
-      setSyncWaiting(names.length ? `Waiting for ${names.join(' and ')} to catch up…` : label)
-      await new Promise(resolve => setTimeout(resolve, 300))
-    }
-    return null
+  const runSynchronizedTransition = useCallback(async request => {
+    syncEpochRef.current += 1
+    const result = await request()
+    if (mountedRef.current) setParty(result.party)
+    return result
   }, [])
 
   useEffect(() => {
@@ -316,7 +309,6 @@ export function StudyPartyRoom() {
 
   useEffect(() => {
     if (!party || party.status !== 'active' || !party.question) return
-    if (!party.sync?.all_ready) return
     const buzzerQuestion = Boolean(party.question.requires_buzzer)
     const buzzerQuestionLive = party.phase === 'question' && buzzerQuestion && !party.buzzed_by
     const spokenLine = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
@@ -360,8 +352,7 @@ export function StudyPartyRoom() {
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
         const voiceDone = markVoiceDone(party)
         if (party.is_host && shouldContinue) {
-          const breathingRoom = party.phase === 'show_intro' ? 700 : party.phase === 'resume' ? 900 : 1800
-          await new Promise(resolve => setTimeout(resolve, breathingRoom))
+          await new Promise(resolve => setTimeout(resolve, 250))
           try { await runSynchronizedTransition(() => continueStudyPartyHost(party.id), 'Waiting for every screen…') }
           catch (problem) { setError(problem.message); await load() }
         } else await voiceDone
@@ -381,24 +372,24 @@ export function StudyPartyRoom() {
       } else await voiceDone
     }
     run()
-  }, [clockOffset, load, markVoiceDone, party?.buzzed_by, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.requires_buzzer, party?.question?.swap_round, party?.question?.voice_prompt, party?.question_opens_at, party?.reveal_announcement, party?.status, party?.sync?.all_ready, queueHostLine, runSynchronizedTransition])
+  }, [clockOffset, load, markVoiceDone, party?.buzzed_by, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.requires_buzzer, party?.question?.swap_round, party?.question?.voice_prompt, party?.question_opens_at, party?.reveal_announcement, party?.status, queueHostLine, runSynchronizedTransition])
 
   useEffect(() => {
-    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || !party.buzzed_by || !party.sync?.all_ready) return
+    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || !party.buzzed_by) return
     const key = `buzz-reaction-${party.current_question}-${party.buzzed_by}`
     if (spokenRef.current.has(key)) return
     spokenRef.current.add(key)
     stopHostVoice()
     queueHostLine(party.host_message)
-  }, [party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, party?.sync?.all_ready, queueHostLine, stopHostVoice])
+  }, [party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, queueHostLine, stopHostVoice])
 
   useEffect(() => {
-    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || party.buzzed_by || !party.attempted_user_ids?.length || !party.sync?.all_ready) return
+    if (party?.status !== 'active' || party.phase !== 'question' || !party.question?.requires_buzzer || party.buzzed_by || !party.attempted_user_ids?.length) return
     const key = `steal-reaction-${party.current_question}-${party.attempted_user_ids.length}`
     if (spokenRef.current.has(key)) return
     spokenRef.current.add(key)
     queueHostLine(party.host_message)
-  }, [party?.attempted_user_ids?.length, party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, party?.sync?.all_ready, queueHostLine])
+  }, [party?.attempted_user_ids?.length, party?.buzzed_by, party?.current_question, party?.host_message, party?.phase, party?.question?.requires_buzzer, party?.status, queueHostLine])
 
   useEffect(() => {
     if (!['countdown', 'double_countdown'].includes(party?.phase)) return
@@ -424,7 +415,7 @@ export function StudyPartyRoom() {
   const seconds = formatSeconds(remaining)
   const countdownNumber = Math.max(1, Math.min(3, Math.ceil(remaining / 1000)))
   const openingRemaining = party.question_opens_at ? Math.max(0, new Date(party.question_opens_at).getTime() - effectiveNow) : 0
-  const roundOpening = party.phase === 'question' && (openingRemaining > 0 || !party.sync?.all_ready)
+  const roundOpening = party.phase === 'question' && openingRemaining > 0
   const questionDuration = Number(party.question?.time_limit || 25) * 1000
   const questionElapsed = party.question_opens_at ? Math.max(0, effectiveNow - new Date(party.question_opens_at).getTime()) : 0
   const livePoints = Math.max(10, Math.min(200, Math.ceil(200 * (1 - Math.min(questionDuration, questionElapsed) / questionDuration))))
@@ -506,7 +497,7 @@ export function StudyPartyRoom() {
 
   if (party.status === 'waiting') {
     const invite = `${window.location.origin}/rivals/party?join=${party.room_code}`
-    return <section className="study-party-lobby"><header className="quiz-show-lobby-controls"><button onClick={leaveGame}><House /> Back to Studentley</button><button onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 /> : <Maximize2 />} {isFullscreen ? 'Exit full screen' : 'Full screen'}</button></header><div className="study-party-lobby-orb"><PartyPopper /></div><span className="rivals-kicker">AI host is ready</span><h1>{party.title}</h1><p>Invite your friends. Everyone stays here until the host starts the game.</p><div className="study-party-share"><button onClick={() => copyValue(party.room_code, 'code')}><span><small>Room code</small><b>{party.room_code}</b></span>{copied === 'code' ? <Check /> : <Copy />}</button><button onClick={() => copyValue(invite, 'link')}><span><small>Invite friends</small><b>{copied === 'link' ? 'Link copied!' : 'Copy invite link'}</b></span><Link2 /></button></div><div className="lobby-details"><span>{party.subject}</span><span>{party.level}</span><span>Free-for-All</span><span>{party.question_count} questions</span></div><button type="button" className={`study-party-voice-toggle ${voiceReady ? 'ready' : ''}`} onClick={async () => { setVoiceEnabled(true); await armHostVoice() }}><Volume2 /> {voiceReady ? 'Male AI host voice ready' : 'Enable male AI host voice'}</button>{voiceStatus && <small className="study-party-voice-status">{voiceStatus}</small>}{error && <ErrorState text={error} />}<PartyScoreboard party={party} lobby />{party.is_host ? <><Button className="rivals-primary study-party-start" loading={working} disabled={party.players.length < 2 || !party.sync?.all_ready} onClick={start}><Zap /> {party.sync?.all_ready ? 'Start Game' : 'Synchronizing players…'}</Button>{party.players.length >= 2 && !party.sync?.all_ready && <SyncNotice text={`Waiting for ${(party.sync?.waiting_for || []).join(' and ') || 'every player'}…`} />}</> : <p className="waiting-host"><LoaderCircle className="spin" /> Waiting for the host to press Start Game…</p>}</section>
+    return <section className="study-party-lobby"><header className="quiz-show-lobby-controls"><button onClick={leaveGame}><House /> Back to Studentley</button><button onClick={toggleFullscreen}>{isFullscreen ? <Minimize2 /> : <Maximize2 />} {isFullscreen ? 'Exit full screen' : 'Full screen'}</button></header><div className="study-party-lobby-orb"><PartyPopper /></div><span className="rivals-kicker">AI host is ready</span><h1>{party.title}</h1><p>Invite your friends. Everyone stays here until the host starts the game.</p><div className="study-party-share"><button onClick={() => copyValue(party.room_code, 'code')}><span><small>Room code</small><b>{party.room_code}</b></span>{copied === 'code' ? <Check /> : <Copy />}</button><button onClick={() => copyValue(invite, 'link')}><span><small>Invite friends</small><b>{copied === 'link' ? 'Link copied!' : 'Copy invite link'}</b></span><Link2 /></button></div><div className="lobby-details"><span>{party.subject}</span><span>{party.level}</span><span>Free-for-All</span><span>{party.question_count} questions</span></div><button type="button" className={`study-party-voice-toggle ${voiceReady ? 'ready' : ''}`} onClick={async () => { setVoiceEnabled(true); await armHostVoice() }}><Volume2 /> {voiceReady ? 'Male AI host voice ready' : 'Enable male AI host voice'}</button>{voiceStatus && <small className="study-party-voice-status">{voiceStatus}</small>}{error && <ErrorState text={error} />}<PartyScoreboard party={party} lobby />{party.is_host ? <Button className="rivals-primary study-party-start" loading={working} disabled={party.players.length < 2} onClick={start}><Zap /> Start Game</Button> : <p className="waiting-host"><LoaderCircle className="spin" /> Waiting for the host to press Start Game…</p>}</section>
   }
 
   if (party.status === 'completed') return <StudyPartyResults party={party} onExit={leaveGame} />
@@ -523,7 +514,6 @@ export function StudyPartyRoom() {
     <header className="study-party-live-header"><span className="study-party-exit-tools"><button onClick={leaveGame}><House /> Leave tab</button><button className="danger" onClick={() => setShowQuit(true)}><ArrowRight /> Quit game</button></span><div><span className="study-party-live-dot" /> AI host live</div><span className="study-party-live-tools">{canRequestBreak && !pausePhase && <button type="button" className="study-party-pause-request" disabled={working} onClick={requestBreak} title="Ask everyone for a short break"><Pause /><span>Break</span></button>}<button type="button" onClick={toggleFullscreen} title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}>{isFullscreen ? <Minimize2 /> : <Maximize2 />}</button><button type="button" onClick={async () => { if (voiceEnabled) { stopHostVoice(); setVoiceEnabled(false); setVoiceStatus('') } else { setVoiceEnabled(true); await armHostVoice() } }} title={voiceEnabled ? 'Mute host voice' : 'Enable host voice'}>{voiceEnabled ? <Volume2 /> : <VolumeX />}</button><b>{party.question_number}/{party.question_count}</b></span></header>
     <div className={`study-party-host-message ${doublePhase ? 'double' : ''}`} key={hostMessage}><BrainCircuit /><p>{hostMessage}</p></div>
     {voiceStatus && <div className="study-party-voice-status live" role="status">{voiceStatus}</div>}
-    {(syncWaiting || (!party.sync?.all_ready && !['question', 'paused'].includes(party.phase))) && <SyncNotice text={syncWaiting || `Waiting for ${(party.sync?.waiting_for || []).join(' and ') || 'every player'} to reach this screen…`} />}
     {error && <ErrorState text={error} />}
     <div className={`study-party-stage ${showLeaderboard ? 'leaderboard-visible' : 'gameplay-only'}`}>
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
@@ -541,10 +531,6 @@ export function StudyPartyRoom() {
   </section>
   {showQuit && <Modal title="Quit this Quizz Show?" description="This action cannot be undone." onClose={() => !quitting && setShowQuit(false)}><div className="study-party-quit-warning"><span><AlertTriangle /></span><div><b>Are you sure you want to quit?</b><p>You will lose 20 Studentley Points and leave the live room. If only one player remains, they win the show.</p></div></div><div className="study-party-modal-actions"><Button variant="ghost" disabled={quitting} onClick={() => setShowQuit(false)}>Keep playing</Button><Button className="study-party-quit-confirm" loading={quitting} onClick={quit}>Quit and lose 20 SP</Button></div></Modal>}
   </>
-}
-
-function SyncNotice({ text }) {
-  return <div className="study-party-sync-notice" role="status"><LoaderCircle className="spin" /><span><b>Keeping every screen together</b><small>{text}</small></span></div>
 }
 
 function ShowIntroStage({ party }) {
