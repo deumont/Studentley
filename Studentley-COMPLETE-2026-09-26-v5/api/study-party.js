@@ -15,7 +15,11 @@ const DOUBLE_QUESTION_SECONDS = 20
 const SPECIAL_CHOICE_MS = 25000
 const WHEEL_SPIN_MS = 7000
 const QUESTION_OPEN_DELAY_MS = 2500
-const SYNC_FRESH_MS = 8000
+// Mobile browsers aggressively throttle background timers. Eight seconds was
+// short enough for an otherwise connected player to be marked as missing while
+// their host audio was still downloading or playing.
+const SYNC_FRESH_MS = 45000
+const VOICE_SYNC_FALLBACK_MS = 45000
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 const QUESTION_COUNTDOWN_PREFIX = '__quizz_show_countdown__:'
 const DOUBLE_OFFER_PREFIX = '__quizz_show_double_offer__:'
@@ -95,7 +99,10 @@ async function synchronizationStatus(db, party, players = null, profiles = null)
   const token = stateSyncToken(party)
   const now = Date.now()
   const waiting = partyPlayers.filter(player => !playerIsSynchronized(party, player, token, now)).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
-  const waitingVoice = partyPlayers.filter(player => playerSync(party, player.user_id).voice_done_token !== token).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
+  const voiceWaitExpired = Date.now() - new Date(party.updated_at || party.started_at || party.created_at || 0).getTime() >= VOICE_SYNC_FALLBACK_MS
+  const waitingVoice = voiceWaitExpired
+    ? []
+    : partyPlayers.filter(player => playerSync(party, player.user_id).voice_done_token !== token).map(player => ({ user_id: player.user_id, display_name: playerName(profileMap.get(player.user_id)) }))
   return { token, all_ready: partyPlayers.length > 0 && waiting.length === 0, waiting, all_voice_ready: partyPlayers.length > 0 && waitingVoice.length === 0, waiting_voice: waitingVoice }
 }
 

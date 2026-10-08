@@ -257,10 +257,14 @@ export function StudyPartyRoom() {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const request = new AbortController()
       let source = null
+      let requestTimeout = null
       speechRequestRef.current = request
       try {
         setVoiceStatus(attempt ? 'Reconnecting the AI host voice…' : 'Studentley is speaking…')
+        requestTimeout = window.setTimeout(() => request.abort(), 18000)
         const audioData = await getAIAudio(text, request.signal, 'quiz_show')
+        window.clearTimeout(requestTimeout)
+        requestTimeout = null
         if (context.state === 'suspended') await context.resume()
         const audioBuffer = await context.decodeAudioData(audioData.slice(0))
         await new Promise((resolve, reject) => {
@@ -284,6 +288,7 @@ export function StudyPartyRoom() {
         context = await armHostVoice()
         if (!context) return false
       } finally {
+        if (requestTimeout) window.clearTimeout(requestTimeout)
         if (speechRequestRef.current === request) speechRequestRef.current = null
         if (audioSourceRef.current === source) audioSourceRef.current = null
       }
