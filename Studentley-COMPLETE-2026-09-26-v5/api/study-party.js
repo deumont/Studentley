@@ -122,7 +122,10 @@ async function getPartyRecord(db, identifier) {
 }
 
 async function getPartyPlayers(db, partyId) {
-  const { data, error } = await db.from('rival_study_party_players').select('*').eq('party_id', partyId).order('joined_at')
+  // joined_at is also the lightweight presence heartbeat, so it must never be
+  // used as a display order. user_id gives us a stable database fallback; the
+  // public scoreboard applies the human-friendly score/name ordering below.
+  const { data, error } = await db.from('rival_study_party_players').select('*').eq('party_id', partyId).order('user_id')
   if (error) throw error
   return data || []
 }
@@ -328,7 +331,9 @@ async function serializeParty(db, party, userId) {
     started_at: party.started_at,
     completed_at: party.completed_at,
     is_host: party.host_user_id === userId,
-    players: publicPlayers.sort((left, right) => Number(right.score || 0) - Number(left.score || 0)),
+    players: publicPlayers.sort((left, right) => Number(right.score || 0) - Number(left.score || 0)
+      || String(left.display_name || '').localeCompare(String(right.display_name || ''), 'en', { sensitivity: 'base' })
+      || String(left.user_id).localeCompare(String(right.user_id))),
     team_scores: teamScores.sort((left, right) => right.score - left.score),
     answer_count: answers.length,
   }
@@ -580,7 +585,7 @@ async function startParty(db, userId, input) {
   const next = chooseNextQuestion(party, players)
   if (!next) throw Object.assign(new Error('This Quizz Show has no questions.'), { status: 409 })
   const profiles = await getProfiles(db, players.map(player => player.user_id))
-  const contenders = naturalNameList(players.map(player => playerName(profiles.get(player.user_id))))
+  const contenders = naturalNameList(players.map(player => playerName(profiles.get(player.user_id))).sort((left, right) => left.localeCompare(right, 'en', { sensitivity: 'base' })))
   const topic = safeText(party.topic || party.subject || 'today’s challenge', 120)
   const welcome = `Welcome to the Studentley Quizz Show! Tonight's topic is ${topic}. Stepping into the arena are ${contenders}. Contenders, get ready—the lights are up, the points are waiting, and the show starts now!`
   const now = new Date()

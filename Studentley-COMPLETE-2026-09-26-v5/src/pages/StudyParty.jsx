@@ -152,7 +152,7 @@ export function StudyPartyRoom() {
       if (!result.waiting_for_sync) { setSyncWaiting(''); return result }
       const names = result.waiting_for || result.party?.sync?.waiting_for || []
       setSyncWaiting(names.length ? `Waiting for ${names.join(' and ')} to catch up…` : label)
-      await new Promise(resolve => setTimeout(resolve, 400))
+      await new Promise(resolve => setTimeout(resolve, 300))
     }
     return null
   }, [])
@@ -170,7 +170,7 @@ export function StudyPartyRoom() {
     if (!party || party.status === 'completed') return
     let cancelled = false
     let timer
-    const delay = party.status === 'active' ? 350 : 1100
+    const delay = party.status === 'active' ? 700 : 1200
     const poll = async () => {
       await load()
       if (!cancelled) timer = setTimeout(poll, delay)
@@ -190,10 +190,9 @@ export function StudyPartyRoom() {
     let timer
     const acknowledge = async () => {
       try {
-        const result = await syncStudyParty(party.id, token)
-        if (!cancelled) setParty(current => current?.sync?.token === token ? result.party : current)
+        await syncStudyParty(party.id, token)
       } catch { /* The normal room poll will reconnect presence. */ }
-      if (!cancelled) timer = setTimeout(acknowledge, 2200)
+      if (!cancelled) timer = setTimeout(acknowledge, 7000)
     }
     acknowledge()
     return () => { cancelled = true; clearTimeout(timer) }
@@ -307,8 +306,7 @@ export function StudyPartyRoom() {
     if (!snapshot?.id || !token) return
     for (let attempt = 0; attempt < 6 && mountedRef.current; attempt += 1) {
       try {
-        const result = await syncStudyParty(snapshot.id, token, true)
-        if (mountedRef.current) setParty(current => current?.sync?.token === token ? result.party : current)
+        await syncStudyParty(snapshot.id, token, true)
         return
       } catch {
         await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)))
@@ -362,7 +360,8 @@ export function StudyPartyRoom() {
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
         await markVoiceDone(party)
         if (party.is_host && shouldContinue) {
-          await new Promise(resolve => setTimeout(resolve, 1800))
+          const breathingRoom = party.phase === 'show_intro' ? 700 : party.phase === 'resume' ? 900 : 1800
+          await new Promise(resolve => setTimeout(resolve, breathingRoom))
           try { await runSynchronizedTransition(() => continueStudyPartyHost(party.id), 'Waiting for every screen…') }
           catch (problem) { setError(problem.message); await load() }
         }
