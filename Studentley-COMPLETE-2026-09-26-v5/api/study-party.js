@@ -20,6 +20,7 @@ const QUESTION_OPEN_DELAY_MS = 2500
 // their host audio was still downloading or playing.
 const SYNC_FRESH_MS = 45000
 const VOICE_SYNC_FALLBACK_MS = 45000
+const SHOW_INTRO_PREFIX = '__quizz_show_welcome__:'
 const QUESTION_INTRO_PREFIX = '__quizz_show_question_intro__:'
 const QUESTION_COUNTDOWN_PREFIX = '__quizz_show_countdown__:'
 const DOUBLE_OFFER_PREFIX = '__quizz_show_double_offer__:'
@@ -80,11 +81,12 @@ const pauseState = party => {
   }
   return null
 }
-const publicHostMessage = party => isQuestionIntro(party)
+const showIntroState = party => markerPayload(party, SHOW_INTRO_PREFIX)
+const publicHostMessage = party => showIntroState(party)?.message || (isQuestionIntro(party)
   ? String(party.host_message).slice(QUESTION_INTRO_PREFIX.length)
   : isQuestionCountdown(party)
     ? String(party.host_message).slice(QUESTION_COUNTDOWN_PREFIX.length)
-    : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || pauseState(party)?.payload?.message || party.host_message
+    : doubleState(party)?.payload?.message || swapState(party)?.message || wheelState(party)?.payload?.message || pauseState(party)?.payload?.message || party.host_message)
 const requiresBuzzer = question => Boolean(question?.swap_round) || normalizedRoundType(question?.round_type) === 'buzzer'
 const liveQuestionTimeLimit = question => requiresBuzzer(question) ? Math.max(45, playableTimeLimit(question)) : playableTimeLimit(question)
 const naturalNameList = names => names.length < 2 ? names[0] || '' : names.length === 2 ? `${names[0]} and ${names[1]}` : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`
@@ -292,7 +294,7 @@ async function serializeParty(db, party, userId) {
     difficulty: party.difficulty,
     game_mode: party.game_mode,
     status: party.status,
-    phase: pause?.phase || double?.phase || wheel?.phase || (questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
+    phase: pause?.phase || double?.phase || wheel?.phase || (showIntroState(party) ? 'show_intro' : questionIntro ? 'intro' : questionCountdown ? 'countdown' : party.phase),
     max_players: party.max_players,
     question_count: party.question_count,
     question_number: party.used_question_indexes?.length || 0,
@@ -577,12 +579,16 @@ async function startParty(db, userId, input) {
   if (!(await synchronizationStatus(db, party, players)).all_ready) return synchronizationWaitResponse(db, party, userId)
   const next = chooseNextQuestion(party, players)
   if (!next) throw Object.assign(new Error('This Quizz Show has no questions.'), { status: 409 })
+  const profiles = await getProfiles(db, players.map(player => player.user_id))
+  const contenders = naturalNameList(players.map(player => playerName(profiles.get(player.user_id))))
+  const topic = safeText(party.topic || party.subject || 'today’s challenge', 120)
+  const welcome = `Welcome to the Studentley Quizz Show! Tonight's topic is ${topic}. Stepping into the arena are ${contenders}. Contenders, get ready—the lights are up, the points are waiting, and the show starts now!`
   const now = new Date()
   const { data, error } = await db.from('rival_study_parties').update({
     status: 'active', phase: 'intermission', game_mode: 'free_for_all', started_at: now.toISOString(), current_question: next.index,
     used_question_indexes: [next.index], directed_user_id: null, buzzed_by: null, buzzed_at: null,
     attempted_user_ids: [], phase_deadline: new Date(now.getTime() + INTRO_FAILSAFE_MS).toISOString(),
-    host_message: questionIntroMessage(roundIntro(next.question)),
+    host_message: markerMessage(SHOW_INTRO_PREFIX, { message: welcome }),
   }).eq('id', party.id).eq('status', 'waiting').select().maybeSingle()
   if (error) throw error
   if (!data) throw Object.assign(new Error('The Quizz Show has already started.'), { status: 409 })
@@ -915,7 +921,7 @@ async function advanceParty(db, party, skipSync = false) {
   const wheel = wheelState(party)
   if (!skipSync) {
     const synchronized = await synchronizationStatus(db, party)
-    const voiceMustFinish = party.phase === 'reveal' || isQuestionIntro(party) || double?.phase === 'double_offer' || double?.phase === 'double_intro' || double?.phase === 'double_reveal' || wheel?.phase === 'wheel_offer' || wheel?.phase === 'wheel_result'
+    const voiceMustFinish = party.phase === 'reveal' || Boolean(showIntroState(party)) || isQuestionIntro(party) || double?.phase === 'double_offer' || double?.phase === 'double_intro' || double?.phase === 'double_reveal' || wheel?.phase === 'wheel_offer' || wheel?.phase === 'wheel_result'
     if (!synchronized.all_ready || (voiceMustFinish && !synchronized.all_voice_ready)) return party
   }
   if (party.phase === 'question' && double?.phase === 'double_question') return finishDoubleRound(db, party)

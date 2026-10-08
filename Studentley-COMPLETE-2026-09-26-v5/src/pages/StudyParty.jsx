@@ -323,7 +323,7 @@ export function StudyPartyRoom() {
     const buzzerQuestionLive = party.phase === 'question' && buzzerQuestion && !party.buzzed_by
     const spokenLine = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
       ? party.reveal_announcement
-      : ['intermission', 'double_offer', 'wheel_offer', 'pause_vote', 'paused', 'resume'].includes(party.phase)
+      : ['show_intro', 'intermission', 'double_offer', 'wheel_offer', 'pause_vote', 'paused', 'resume'].includes(party.phase)
         ? party.host_message
         : ''
     const key = party.phase === 'intro'
@@ -358,7 +358,7 @@ export function StudyPartyRoom() {
       }
       if (spokenLine) {
         const spoken = await queueHostLine(spokenLine)
-        const shouldContinue = ['reveal', 'double_reveal', 'wheel_result', 'intermission', 'resume'].includes(party.phase)
+        const shouldContinue = ['show_intro', 'reveal', 'double_reveal', 'wheel_result', 'intermission', 'resume'].includes(party.phase)
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
         await markVoiceDone(party)
         if (party.is_host && shouldContinue) {
@@ -407,7 +407,7 @@ export function StudyPartyRoom() {
     if (!party.is_host || !party.phase_deadline) return
     const wait = Math.max(0, new Date(party.phase_deadline).getTime() - (Date.now() + clockOffset)) + 40
     const timer = setTimeout(async () => {
-      try { await runSynchronizedTransition(() => openStudyPartyQuestion(party.id), 'Locking everyone into the same round…') }
+      try { await runSynchronizedTransition(() => openStudyPartyQuestion(party.id), 'GO! Opening the round for everyone…') }
       catch { await load() }
     }, wait)
     return () => clearTimeout(timer)
@@ -528,7 +528,7 @@ export function StudyPartyRoom() {
     {error && <ErrorState text={error} />}
     <div className={`study-party-stage ${showLeaderboard ? 'leaderboard-visible' : 'gameplay-only'}`}>
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
-        {pausePhase ? <PauseStage party={party} onVote={voteBreak} onReady={readyFromBreak} working={working} pendingAction={pendingAction} /> : roundOpening ? <RoundSyncStage /> : wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
+        {pausePhase ? <PauseStage party={party} onVote={voteBreak} onReady={readyFromBreak} working={working} pendingAction={pendingAction} /> : party.phase === 'show_intro' ? <ShowIntroStage party={party} /> : roundOpening ? <RoundGoStage /> : wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
           <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Winner swaps scores</b> : party.question?.is_final && <b><Crown /> Final round</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
           <small>{party.question?.difficulty} · {party.question?.topic} · {party.phase === 'question' ? `${livePoints} points available now` : 'Up to 200 points · speed matters'}</small>
@@ -548,8 +548,21 @@ function SyncNotice({ text }) {
   return <div className="study-party-sync-notice" role="status"><LoaderCircle className="spin" /><span><b>Keeping every screen together</b><small>{text}</small></span></div>
 }
 
-function RoundSyncStage() {
-  return <div className="study-party-round-sync" role="status" aria-live="polite"><span><LoaderCircle className="spin" /></span><small>Live synchronization</small><h1>Locking in every screen…</h1><p>The question and buzzer will open for everyone at exactly the same moment.</p><div>{Array.from({ length: 3 }, (_, index) => <i key={index} />)}</div></div>
+function ShowIntroStage({ party }) {
+  return <div className="study-party-show-intro" role="status" aria-live="polite">
+    <div className="study-party-intro-orbits"><i /><i /><i /><span><Trophy /></span></div>
+    <small>Tonight’s Quiz Show</small>
+    <h1>{party.topic || party.subject}</h1>
+    <p>{party.level} · {party.question_count} questions · Up to 200 points per question</p>
+    <div className="study-party-intro-contenders">
+      {party.players.map((player, index) => <article key={player.user_id} style={{ '--intro-delay': `${.48 + index * .13}s` }}><ProfileAvatar profile={player} /><span><small>Contender {String(index + 1).padStart(2, '0')}</small><b>{player.display_name}</b></span></article>)}
+    </div>
+    <strong><Sparkles /> Let the show begin <Sparkles /></strong>
+  </div>
+}
+
+function RoundGoStage() {
+  return <div className="study-party-round-sync go" role="status" aria-live="assertive"><div className="study-party-go-rings"><i /><i /><i /></div><small>Everyone is ready</small><h1>GO!</h1><p>The round opens for every player at the same moment.</p></div>
 }
 
 function PauseStage({ party, onVote, onReady, working, pendingAction }) {
