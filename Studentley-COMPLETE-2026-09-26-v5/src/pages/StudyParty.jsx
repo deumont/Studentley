@@ -339,11 +339,11 @@ export function StudyPartyRoom() {
       if (party.phase === 'intro' && buzzerQuestion) {
         const spoken = await queueHostLine(party.host_message)
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
-        await markVoiceDone(party)
+        const voiceDone = markVoiceDone(party)
         if (party.is_host) {
           try { await runSynchronizedTransition(() => startStudyPartyCountdown(party.id), 'Synchronizing the countdown…') }
           catch (problem) { setError(problem.message); await load() }
-        }
+        } else await voiceDone
         return
       }
       if (buzzerQuestionLive) {
@@ -351,20 +351,20 @@ export function StudyPartyRoom() {
         if (waitForSharedOpening) await new Promise(resolve => setTimeout(resolve, waitForSharedOpening))
         const spoken = await queueHostLine(party.question.voice_prompt || party.question.prompt)
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
-        await markVoiceDone(party)
+        void markVoiceDone(party)
         return
       }
       if (spokenLine) {
         const spoken = await queueHostLine(spokenLine)
         const shouldContinue = ['show_intro', 'reveal', 'double_reveal', 'wheel_result', 'intermission', 'resume'].includes(party.phase)
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
-        await markVoiceDone(party)
+        const voiceDone = markVoiceDone(party)
         if (party.is_host && shouldContinue) {
           const breathingRoom = party.phase === 'show_intro' ? 700 : party.phase === 'resume' ? 900 : 1800
           await new Promise(resolve => setTimeout(resolve, breathingRoom))
           try { await runSynchronizedTransition(() => continueStudyPartyHost(party.id), 'Waiting for every screen…') }
           catch (problem) { setError(problem.message); await load() }
-        }
+        } else await voiceDone
         return
       }
       const directed = party.players.find(player => player.user_id === party.double_or_nothing?.target_user_id)
@@ -374,11 +374,11 @@ export function StudyPartyRoom() {
       const swapIntro = party.question.swap_round ? 'Score Swap Round. Everyone can answer. The winner must swap their total points with another player. ' : ''
       const spoken = await queueHostLine(`${target}${swapIntro}${party.question.voice_prompt || party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
-      await markVoiceDone(party)
+      const voiceDone = markVoiceDone(party)
       if (party.is_host) {
         try { await runSynchronizedTransition(() => startStudyPartyCountdown(party.id), 'Synchronizing the countdown…') }
         catch (problem) { if (!/answers/i.test(problem.message)) setError(problem.message); await load() }
-      }
+      } else await voiceDone
     }
     run()
   }, [clockOffset, load, markVoiceDone, party?.buzzed_by, party?.current_question, party?.directed_user_id, party?.double_or_nothing?.target_user_id, party?.host_message, party?.id, party?.is_host, party?.phase, party?.question?.prompt, party?.question?.requires_buzzer, party?.question?.swap_round, party?.question?.voice_prompt, party?.question_opens_at, party?.reveal_announcement, party?.status, party?.sync?.all_ready, queueHostLine, runSynchronizedTransition])

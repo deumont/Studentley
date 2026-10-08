@@ -606,7 +606,7 @@ async function startQuestionCountdown(db, userId, input) {
   const double = doubleState(party)
   if (party.status !== 'active' || (!isQuestionIntro(party) && double?.phase !== 'double_intro')) return { party: await serializeParty(db, party, userId) }
   const synchronized = await synchronizationStatus(db, party)
-  if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
+  if (!synchronized.all_ready) return synchronizationWaitResponse(db, party, userId)
   const visibleMessage = publicHostMessage(party)
   const { data, error } = await db.from('rival_study_parties').update({
     phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(),
@@ -977,7 +977,7 @@ async function continueHostPhase(db, userId, input) {
   const pause = pauseState(party)
   if (pause?.phase === 'resume') {
     const synchronized = await synchronizationStatus(db, party)
-    if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
+    if (!synchronized.all_ready) return synchronizationWaitResponse(db, party, userId)
     const { data: restored, error } = await db.from('rival_study_parties').update({
       phase: pause.payload.return_phase || 'reveal',
       host_message: pause.payload.return_host_message || 'The show is back!',
@@ -998,7 +998,7 @@ async function continueHostPhase(db, userId, input) {
   const canContinue = party.phase === 'reveal' || isPassiveIntermission
   if (!canContinue) return { party: await serializeParty(db, party, userId) }
   const synchronized = await synchronizationStatus(db, party)
-  if (!synchronized.all_ready || !synchronized.all_voice_ready) return synchronizationWaitResponse(db, party, userId, true)
+  if (!synchronized.all_ready) return synchronizationWaitResponse(db, party, userId)
   const advanced = await advanceParty(db, { ...party, phase_deadline: new Date(0).toISOString() })
   return { party: await serializeParty(db, advanced, userId) }
 }
