@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react'
-import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, FileText, Flame, FolderOpen, GraduationCap, Lightbulb, Play, Sparkles, Target, Trophy } from 'lucide-react'
+import { ArrowRight, ArrowUpRight, CalendarDays, CheckCircle2, Clock3, FileCheck2, FileText, Flame, FolderOpen, GraduationCap, Lightbulb, Play, Sparkles, Target, Trophy } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { Button, EmptyState, Loader, formatDate, greeting } from '../components/UI'
@@ -85,11 +85,16 @@ export default function Home() {
       <section className="card home-panel home-exam-panel">
         <PanelHeader index="02" icon={GraduationCap} title="Mock exam library" meta={`${mockExams.length} saved`} />
         {mockExams.length ? <div className="home-exam-list">{mockExams.map((item, index) => {
-          const marks = item.config?.totalMarks || item.items?.reduce((sum, question) => sum + Number(question.marks || 0), 0) || 0
-          return <article key={item.id} style={{ '--item-index': index }}>
-            <time><strong>{marks}</strong><small>MARKS</small></time>
+          const result = practiceResults.find(entry => entry.practice_set_id === item.id)
+          const marking = result?.answers?.marking
+          const hasResult = Number.isFinite(Number(result?.score_percent))
+          const scoreLabel = marking && Number.isFinite(Number(marking.earned_marks)) && Number.isFinite(Number(marking.total_marks))
+            ? { value: `${marking.earned_marks}/${marking.total_marks}`, label: 'MARKS' }
+            : hasResult ? { value: `${Math.round(Number(result.score_percent))}%`, label: 'SCORE' } : null
+          return <article className={scoreLabel ? 'marked' : 'unmarked'} key={item.id} style={{ '--item-index': index }}>
+            {scoreLabel ? <time><strong>{scoreLabel.value}</strong><small>{scoreLabel.label}</small></time> : <time className="ready"><FileCheck2 /><small>READY</small></time>}
             <span><small>{item.config?.qualification || item.config?.subjectName || 'Personalized paper'}</small><b>{item.title}</b></span>
-            <i style={{ '--exam-progress': `${Math.min(100, Math.max(18, marks))}%` }} />
+            {hasResult && <i style={{ '--exam-progress': `${Math.max(0, Math.min(100, Number(result.score_percent)))}%` }} />}
           </article>
         })}</div> : <EmptyState compact icon={GraduationCap} title="No mock exams yet" text="Generate a personalized paper and mark scheme for your level."><Button variant="secondary" onClick={() => navigate('/practice', { state: { openPracticeTab: 'mock', openPracticeGenerator: 'mock' } })}>Generate mock exam</Button></EmptyState>}
         <button className="home-panel-link" onClick={() => navigate('/practice', { state: { openPracticeTab: 'mock' } })}>View mock exams <ArrowRight /></button>
