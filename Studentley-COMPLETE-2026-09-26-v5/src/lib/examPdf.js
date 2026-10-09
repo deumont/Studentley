@@ -24,6 +24,37 @@ function safeText(value) {
     .replace(/[^\x09\x0A\x0D\x20-\x7E\xA0-\xFF]/g, '?')
 }
 
+function cleanQuestionPrompt(value) {
+  return safeText(value).trim()
+    .replace(/^\s*(?:question\s+)?\d+\s*(?:\([a-z]\))?(?:[.):-]\s*|\s+)/i, '')
+    .replace(/^\s*\([a-z]\)\s+/i, '')
+    .trim()
+}
+
+function cleanSequentialLabels(values, alphabetic = true) {
+  if (!Array.isArray(values)) return []
+  const plainLabels = values.length > 1 && values.every((value, index) => {
+    const label = alphabetic ? String.fromCharCode(65 + index) : String(index + 1)
+    return new RegExp(`^\\s*${label}\\s+\\S`, 'i').test(safeText(value))
+  })
+  return values.map((value, index) => {
+    const clean = safeText(value).trim()
+    const label = alphabetic ? String.fromCharCode(65 + index) : String(index + 1)
+    const pattern = plainLabels ? `^\\s*(?:\\(${label}\\)|${label}[).:]|${label}\\s+)\\s*` : `^\\s*(?:\\(${label}\\)|${label}[).:])\\s*`
+    return clean.replace(new RegExp(pattern, 'i'), '').trim()
+  })
+}
+
+const examTypeOrder = { multiple_choice: 0, fill_blank: 0, matching: 1, classification: 1, table_completion: 2, label_diagram: 2, written: 3, calculation: 3, diagram: 3, extended_response: 5 }
+const examDifficultyScore = item => (examTypeOrder[item.question_type] ?? 3) * 20 + Math.max(1, Number(item.marks) || 1) * 3 + Math.min(24, Math.max(0, Number(item.answer_lines) || 0)) / 2
+const orderedExamItems = exam => exam.config?.progressiveOrder
+  ? (exam.items || []).map((item, originalIndex) => ({ item, originalIndex })).sort((left, right) => examDifficultyScore(left.item) - examDifficultyScore(right.item) || Number(left.item.marks || 0) - Number(right.item.marks || 0) || left.originalIndex - right.originalIndex).map(entry => entry.item)
+  : (exam.items || [])
+const progressionSection = (index, count) => {
+  const progress = index / Math.max(1, count - 1)
+  return progress < 0.35 ? 'Section A: Foundations' : progress < 0.75 ? 'Section B: Apply your knowledge' : 'Section C: Extended challenge'
+}
+
 function wrapText(text, font, size, width) {
   const paragraphs = safeText(text).split(/\r?\n/)
   const lines = []
@@ -173,7 +204,7 @@ function drawDiagram(page, item, x, y, width, fonts) {
 
 function drawWordBank(page, fonts, options, y) {
   if (!options?.length) return y
-  const text = options.map((option, index) => `${String.fromCharCode(65 + index)}. ${safeText(option)}`).join('     ')
+  const text = cleanSequentialLabels(options).map((option, index) => `${String.fromCharCode(65 + index)}. ${option}`).join('     ')
   const lines = wrapText(text, fonts.regular, 8.5, A4[0] - MARGIN * 2 - 24)
   const height = Math.max(34, lines.length * 12 + 20)
   page.drawRectangle({ x: MARGIN + 34, y: y - height, width: A4[0] - MARGIN * 2 - 34, height, color: paleBlue, borderColor: line, borderWidth: 0.6 })
@@ -192,8 +223,8 @@ function drawSourceContext(page, fonts, text, x, y, width) {
 }
 
 function drawMatching(page, fonts, item, y) {
-  const left = (item.matching_left || []).slice(0, 8)
-  const right = (item.matching_right || []).slice(0, left.length)
+  const left = cleanSequentialLabels(item.matching_left, false).slice(0, 8)
+  const right = cleanSequentialLabels(item.matching_right, true).slice(0, left.length)
   if (!left.length || right.length !== left.length) return y
   const startX = MARGIN + 34
   const width = A4[0] - MARGIN * 2 - 34
@@ -242,7 +273,7 @@ function drawCompletionTable(page, fonts, item, y) {
 }
 
 function drawClassification(page, fonts, item, y) {
-  const entries = (item.options || []).slice(0, 7)
+  const entries = cleanSequentialLabels(item.options, false).slice(0, 7)
   const categories = (item.matching_right || []).slice(0, 4)
   if (!entries.length || categories.length < 2) return y
   const x = MARGIN + 34
@@ -278,10 +309,11 @@ function drawQuestionPaper(pdf, fonts, exam) {
   let section = ''
   const newPage = () => { page = pdf.addPage(A4); drawPageHeader(page, fonts, exam); y = A4[1] - 68 }
   const ensure = height => { if (!page || y - height < BOTTOM) newPage() }
+  const items = orderedExamItems(exam)
   newPage()
-  for (const [index, item] of (exam.items || []).entries()) {
+  for (const [index, item] of items.entries()) {
     const questionType = item.question_type || (item.options?.length ? 'multiple_choice' : 'written')
-    const nextSection = safeText(item.section || 'Questions')
+    const nextSection = safeText(exam.config?.progressiveOrder ? progressionSection(index, items.length) : item.section || 'Questions')
     const requestedLines = Number.isFinite(Number(item.answer_lines)) ? Number(item.answer_lines) : Number(item.marks) * 2
     const estimatedLines = noGenericAnswerLineTypes.has(questionType) ? 0 : Math.max(0, Math.min(requestedLines, 24))
     const formatHeight = questionType === 'multiple_choice' ? Math.min(item.options?.length || 0, 4) * 25
@@ -307,11 +339,12 @@ function drawQuestionPaper(pdf, fonts, exam) {
     page.drawText(marks, { x: A4[0] - MARGIN - fonts.bold.widthOfTextAtSize(marks, 9), y, font: fonts.bold, size: 9, color: ink })
     let contentY = y
     if (item.context) contentY = drawSourceContext(page, fonts, item.context, MARGIN + 34, contentY, A4[0] - MARGIN * 2 - 65) - 16
-    const prompt = questionType === 'fill_blank' ? safeText(item.prompt).replace(/\[blank\]/gi, '____________') : item.prompt
+    const cleanedPrompt = cleanQuestionPrompt(item.prompt)
+    const prompt = questionType === 'fill_blank' ? cleanedPrompt.replace(/\[blank\]/gi, '____________') : cleanedPrompt
     contentY = drawWrapped(page, prompt, { x: MARGIN + 34, y: contentY, width: A4[0] - MARGIN * 2 - 65, font: fonts.regular, size: 10, lineHeight: 14 })
     y = contentY - 8
     if (questionType === 'multiple_choice' && item.options?.length) {
-      for (const [optionIndex, option] of item.options.entries()) {
+      for (const [optionIndex, option] of cleanSequentialLabels(item.options).entries()) {
         ensure(25)
         page.drawRectangle({ x: MARGIN + 36, y: y - 4, width: 10, height: 10, borderColor: ink, borderWidth: 0.8 })
         y = drawWrapped(page, `${String.fromCharCode(65 + optionIndex)}  ${option}`, { x: MARGIN + 55, y: y + 3, width: A4[0] - MARGIN * 2 - 58, font: fonts.regular, size: 9, lineHeight: 13 }) - 5
@@ -367,7 +400,7 @@ function drawMarkScheme(pdf, fonts, exam) {
   const newPage = () => { page = pdf.addPage(A4); drawPageHeader(page, fonts, exam); y = A4[1] - 70 }
   const ensure = height => { if (!page || y - height < BOTTOM) newPage() }
   newPage()
-  for (const [index, item] of (exam.items || []).entries()) {
+  for (const [index, item] of orderedExamItems(exam).entries()) {
     const points = item.mark_scheme?.length ? item.mark_scheme : item.explanation ? [item.explanation] : ['Accept any accurate response supported by the selected material.']
     ensure(45 + points.length * 18)
     const number = safeText(item.number || String(index + 1))
