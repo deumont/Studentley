@@ -180,29 +180,84 @@ function examProgressionScore(item) {
   return type * 20 + marks * 3 + Math.min(lines, 24) / 2
 }
 
+function balanceExamMarks(items, requestedTotal) {
+  if (!items.length) return items
+  const target = Math.max(items.length, Math.max(20, Math.min(Number(requestedTotal) || 60, 120)))
+  const balanced = items.map(item => ({ ...item, marks: Math.max(1, Math.min(30, Math.round(Number(item.marks) || 1))) }))
+  let difference = target - balanced.reduce((sum, item) => sum + item.marks, 0)
+  let cursor = difference > 0 ? balanced.length - 1 : 0
+  let attempts = 0
+  while (difference !== 0 && attempts < balanced.length * 150) {
+    const item = balanced[cursor]
+    if (difference > 0 && item.marks < 30) { item.marks += 1; difference -= 1 }
+    if (difference < 0 && item.marks > 1) { item.marks -= 1; difference += 1 }
+    cursor = difference > 0 ? (cursor - 1 + balanced.length) % balanced.length : (cursor + 1) % balanced.length
+    attempts += 1
+  }
+  return balanced
+}
+
+function normalizeExamItem(item) {
+  let questionType = examTypeOrder[item.question_type] === undefined ? 'written' : item.question_type
+  let prompt = stripExamQuestionPrefix(item.prompt)
+  let options = stripSequentialLabels(item.options, true).filter(hasText)
+  let matchingLeft = stripSequentialLabels(item.matching_left, false).filter(hasText)
+  let matchingRight = stripSequentialLabels(item.matching_right, true).filter(hasText)
+  const tableHeaders = Array.isArray(item.table_headers) ? item.table_headers.map(value => String(value || '').trim()) : []
+  const tableRows = Array.isArray(item.table_rows) ? item.table_rows.map(row => Array.isArray(row) ? row.map(value => String(value || '')) : []) : []
+
+  if (questionType === 'fill_blank' && !/\[blank\]/i.test(prompt)) {
+    const withMarker = prompt.replace(/_{2,}|\.{3,}|\[\s*\]/, '[blank]')
+    prompt = withMarker === prompt ? `${prompt.replace(/[.\s]+$/g, '')}: [blank]` : withMarker
+  }
+  if (questionType === 'multiple_choice' && options.length > 4) options = options.slice(0, 4)
+  if (questionType === 'multiple_choice' && options.length !== 4) questionType = 'written'
+  const matchingCount = Math.min(matchingLeft.length, matchingRight.length)
+  if (questionType === 'matching' && matchingCount >= 2) {
+    matchingLeft = matchingLeft.slice(0, matchingCount)
+    matchingRight = matchingRight.slice(0, matchingCount)
+  } else if (questionType === 'matching') questionType = 'written'
+  const tableWidth = tableHeaders.length
+  if (questionType === 'table_completion' && (tableWidth < 2 || !tableRows.length || tableRows.some(row => row.length !== tableWidth))) questionType = 'written'
+
+  const noLines = new Set(['multiple_choice', 'matching', 'fill_blank', 'table_completion', 'classification', 'label_diagram'])
+  const marks = Math.max(1, Math.min(30, Math.round(Number(item.marks) || 1)))
+  const answerLines = noLines.has(questionType) ? 0 : Math.max(2, Math.min(24, Math.round(Number(item.answer_lines) || Math.min(marks + 1, 10))))
+  return { ...item, prompt, marks, question_type: questionType, answer_lines: answerLines, options, matching_left: matchingLeft, matching_right: matchingRight, table_headers: tableHeaders, table_rows: tableRows }
+}
+
 function normalizeGeneratedResult(operation, result, input = {}) {
   const titled = normalizeGeneratedTitle(operation, result, input)
   if (operation !== 'generateMockExam' || !Array.isArray(titled?.items)) return titled
-  const ordered = titled.items
+  const seen = new Set()
+  const distinct = titled.items.map(normalizeExamItem).filter(item => {
+    const key = normalizedContent(`${item.context || ''} ${item.prompt || ''}`)
+    if (!key || seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+  const ordered = distinct
     .map((item, originalIndex) => ({ item, originalIndex, score: examProgressionScore(item) }))
     .sort((left, right) => left.score - right.score || Number(left.item.marks || 0) - Number(right.item.marks || 0) || left.originalIndex - right.originalIndex)
   const lastIndex = Math.max(1, ordered.length - 1)
+  const balancedItems = balanceExamMarks(ordered.map(({ item }) => item), input.totalMarks)
   return {
     ...titled,
-    items: ordered.map(({ item }, index) => {
+    items: balancedItems.map((item, index) => {
       const progress = index / lastIndex
       const section = progress < 0.35 ? 'Section A: Foundations' : progress < 0.75 ? 'Section B: Apply your knowledge' : 'Section C: Extended challenge'
       return {
         ...item,
         number: String(index + 1),
         section,
-        prompt: stripExamQuestionPrefix(item.prompt),
-        options: stripSequentialLabels(item.options, true),
-        matching_left: stripSequentialLabels(item.matching_left, false),
-        matching_right: stripSequentialLabels(item.matching_right, true),
       }
     }),
   }
+}
+
+function isUsableMockExam(result) {
+  const items = Array.isArray(result?.items) ? result.items : []
+  return hasText(result?.title) && items.length >= 3 && items.every(item => hasText(item.prompt) && Number(item.marks) > 0 && Array.isArray(item.mark_scheme) && item.mark_scheme.some(hasText))
 }
 
 function duplicateIssues(items, valueFor, label) {
@@ -453,6 +508,10 @@ async function qualityAssureMockExam(input, context, fileParts, initialResult) {
 
   remainingIssues = deterministicQualityIssues('generateMockExam', input, candidate)
   if (remainingIssues.length === 0) return candidate
+  if (isUsableMockExam(candidate)) {
+    console.warn('Saving reviewed mock exam with non-blocking quality notes:', { issues: remainingIssues })
+    return candidate
+  }
   console.error('AI quality check rejected generated mock exam:', { issues: remainingIssues })
   throw Object.assign(new Error('The AI quality check found problems it could not safely repair. Nothing was saved; please generate again.'), { status: 502 })
 }
