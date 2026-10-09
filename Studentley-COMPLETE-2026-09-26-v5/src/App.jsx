@@ -1,5 +1,5 @@
-import React, { useLayoutEffect, useRef, useState } from 'react'
-import { Navigate, Route, Routes, useLocation, useParams } from 'react-router-dom'
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { useApp } from './context/AppContext'
 import Auth from './pages/Auth'
 import Onboarding from './pages/Onboarding'
@@ -86,20 +86,53 @@ export default function App() {
   </>
 }
 
+const isRivalsRoute = path => path === '/rivals' || path.startsWith('/rivals/')
+const isStudentleyRoute = path => /^\/(?:app|upload|study-plan|practice|leaderboard|settings)(?:\/|$)/.test(path)
+
 function RouteTransition({ pathname }) {
+  const navigate = useNavigate()
   const previousPath = useRef(pathname)
+  const pendingNavigation = useRef(null)
+  const navigationTimer = useRef(null)
   const [destination, setDestination] = useState(null)
+  const [phase, setPhase] = useState('arriving')
+
+  useEffect(() => {
+    const interceptModeSwitch = event => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return
+      const anchor = event.target instanceof Element ? event.target.closest('a[href]') : null
+      if (!anchor || anchor.target && anchor.target !== '_self' || anchor.hasAttribute('download')) return
+      const target = new URL(anchor.href, window.location.href)
+      if (target.origin !== window.location.origin) return
+      const switchingToRivals = isStudentleyRoute(pathname) && isRivalsRoute(target.pathname)
+      const switchingToStudentley = isRivalsRoute(pathname) && isStudentleyRoute(target.pathname)
+      if (!switchingToRivals && !switchingToStudentley) return
+      event.preventDefault()
+      event.stopPropagation()
+      if (pendingNavigation.current) return
+      const nextDestination = switchingToRivals ? 'rivals' : 'studentley'
+      pendingNavigation.current = { pathname: target.pathname, destination: nextDestination }
+      setDestination(nextDestination)
+      setPhase('leaving')
+      navigationTimer.current = window.setTimeout(() => navigate(`${target.pathname}${target.search}${target.hash}`), 460)
+    }
+    document.addEventListener('click', interceptModeSwitch, true)
+    return () => document.removeEventListener('click', interceptModeSwitch, true)
+  }, [navigate, pathname])
+
+  useEffect(() => () => window.clearTimeout(navigationTimer.current), [])
 
   useLayoutEffect(() => {
     const previous = previousPath.current
     previousPath.current = pathname
-    const isRivalsPath = path => path === '/rivals' || path.startsWith('/rivals/')
-    const isStudentleyPath = path => /^\/(?:app|upload|study-plan|practice|leaderboard|settings)(?:\/|$)/.test(path)
-    const switchingToRivals = isStudentleyPath(previous) && isRivalsPath(pathname)
-    const switchingToStudentley = isRivalsPath(previous) && isStudentleyPath(pathname)
+    const switchingToRivals = isStudentleyRoute(previous) && isRivalsRoute(pathname)
+    const switchingToStudentley = isRivalsRoute(previous) && isStudentleyRoute(pathname)
     if (switchingToRivals || switchingToStudentley) {
-      setDestination(switchingToRivals ? 'rivals' : 'studentley')
-      const timer = window.setTimeout(() => setDestination(null), 1650)
+      const nextDestination = switchingToRivals ? 'rivals' : 'studentley'
+      pendingNavigation.current = null
+      setDestination(nextDestination)
+      setPhase('arriving')
+      const timer = window.setTimeout(() => setDestination(null), 1180)
       return () => window.clearTimeout(timer)
     }
     const publicHandoff = previous === '/' || previous === '/plans'
@@ -117,7 +150,7 @@ function RouteTransition({ pathname }) {
     const studentleyVariant = pathname === '/upload' ? 'documents' : pathname === '/study-plan' ? 'planner' : pathname === '/practice' ? 'practice' : pathname === '/leaderboard' ? 'leaderboard' : pathname === '/settings' ? 'settings' : 'dashboard'
     const rivalsVariant = pathname.startsWith('/rivals/ranked') ? 'ranked' : pathname.startsWith('/rivals/friends') ? 'friends' : pathname.startsWith('/rivals/party') ? 'party' : pathname.startsWith('/rivals/quizzes') ? 'library' : pathname.startsWith('/rivals/match') ? 'arena' : 'rivals'
     const skeletonVariant = destination === 'rivals' ? rivalsVariant : studentleyVariant
-    return <div className={`studentley-mode-transition mode-to-${destination}`} role="status" aria-live="polite">
+    return <div className={`studentley-mode-transition mode-to-${destination} mode-${phase}`} role="status" aria-live="polite">
       <span className="mode-transition-white" aria-hidden="true" />
       <div className="mode-transition-skeleton">
         <Loader full shell variant={skeletonVariant} label={destination === 'rivals' ? 'Loading Rivals…' : 'Loading Studentley…'} />

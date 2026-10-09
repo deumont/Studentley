@@ -183,22 +183,28 @@
 @media(max-width:800px){.route-build-shell{grid-template-columns:1fr}.route-build-shell aside{display:none}.route-build-shell main>header{height:70px;padding:0 13px}.route-build-shell main>header i:first-of-type{width:42px;margin:0 auto 0 0;border-radius:12px}.route-build-shell main>header i:last-child{width:45px;border-radius:50%}.route-build-page{width:calc(100% - 22px);padding-top:5px}.route-build-hero{min-height:625px;grid-template-columns:1fr;align-content:start;gap:26px;padding:28px 18px 14px;border-radius:29px}.route-build-hero>div{padding-top:8px}.route-build-hero>div i{width:48%;margin:0 auto}.route-build-hero>div b{width:92%;height:45px;margin-inline:auto}.route-build-hero>div b:nth-of-type(2){width:67%}.route-build-hero>div em{width:100%;max-width:100%;height:125px;margin-top:14px}.route-build-hero>span{grid-row:auto;width:180px;height:180px;box-shadow:0 0 0 30px color-mix(in srgb,var(--line) 55%,transparent),0 0 0 60px color-mix(in srgb,var(--line) 27%,transparent)}.route-build-metrics{grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}.route-build-metrics i{height:84px;border-radius:18px}.route-build-section-heading{width:82%;max-width:82%;height:66px;margin:24px 2px 15px}.route-build-panels{grid-template-columns:1fr}.route-build-panels i{height:330px;border-radius:23px}.route-build-panels i:nth-child(2){display:block}.route-to-dashboard .route-transition-status{bottom:14px}}
 
 /* Studentley ↔ Rivals handoff: fade to white, reveal the real destination skeleton, then uncover the page. */
-.studentley-mode-transition{position:fixed;z-index:10000;inset:0;overflow:hidden;pointer-events:none;background:transparent;animation:mode-transition-layer 1.65s linear both}
-.mode-transition-white{position:absolute;z-index:2;inset:0;background:#fff;animation:mode-transition-white 1.65s cubic-bezier(.35,0,.2,1) both}
-.mode-transition-skeleton{position:absolute;z-index:1;inset:0;overflow:hidden;background:var(--bg);opacity:0;transform:scale(1.012);animation:mode-transition-skeleton 1.65s cubic-bezier(.2,.72,.2,1) both}
+.studentley-mode-transition{position:fixed;z-index:10000;inset:0;overflow:hidden;pointer-events:none;background:transparent}
+.mode-transition-white{position:absolute;z-index:2;inset:0;background:#fff}
+.mode-transition-skeleton{position:absolute;z-index:1;inset:0;overflow:hidden;background:var(--bg);opacity:0;transform:scale(1.012)}
+.studentley-mode-transition.mode-leaving .mode-transition-white{animation:mode-depart-white .46s cubic-bezier(.35,0,.2,1) both}
+.studentley-mode-transition.mode-leaving .mode-transition-skeleton{display:none}
+.studentley-mode-transition.mode-arriving{animation:mode-arrive-layer 1.18s linear both}
+.studentley-mode-transition.mode-arriving .mode-transition-white{animation:mode-arrive-white 1.18s cubic-bezier(.35,0,.2,1) both}
+.studentley-mode-transition.mode-arriving .mode-transition-skeleton{animation:mode-arrive-skeleton 1.18s cubic-bezier(.2,.72,.2,1) both}
 .mode-transition-skeleton>.skeleton-shell-loader{width:100%;height:100%;min-height:100%;overflow:hidden}
-.mode-transition-skeleton .skeleton-shell-sidebar{animation:mode-skeleton-sidebar .52s .66s cubic-bezier(.16,.82,.2,1) both}
-.mode-transition-skeleton .skeleton-shell-main>header{animation:mode-skeleton-header .42s .72s ease both}
-.mode-transition-skeleton .skeleton-page{animation:mode-skeleton-page .5s .77s cubic-bezier(.16,.82,.2,1) both}
+.mode-arriving .mode-transition-skeleton .skeleton-shell-sidebar{animation:mode-skeleton-sidebar .45s .12s cubic-bezier(.16,.82,.2,1) both}
+.mode-arriving .mode-transition-skeleton .skeleton-shell-main>header{animation:mode-skeleton-header .38s .18s ease both}
+.mode-arriving .mode-transition-skeleton .skeleton-page{animation:mode-skeleton-page .45s .23s cubic-bezier(.16,.82,.2,1) both}
 .mode-to-rivals .mode-transition-skeleton{--mode-accent:#4ea473}
 .mode-to-studentley .mode-transition-skeleton{--mode-accent:#4f7ff2}
-.mode-transition-skeleton:after{content:"";position:absolute;z-index:5;left:262px;right:0;top:0;height:3px;background:var(--mode-accent);transform-origin:left;animation:mode-skeleton-progress .65s .71s cubic-bezier(.2,.78,.2,1) both}
-@keyframes mode-transition-layer{0%,86%{opacity:1}100%{opacity:0}}
-@keyframes mode-transition-white{0%{opacity:0}28%,42%{opacity:1}64%,100%{opacity:0}}
-@keyframes mode-transition-skeleton{0%,34%{opacity:0;transform:scale(1.012)}49%,86%{opacity:1;transform:none}100%{opacity:0;transform:none}}
+.mode-arriving .mode-transition-skeleton:after{content:"";position:absolute;z-index:5;left:262px;right:0;top:0;height:3px;background:var(--mode-accent);transform-origin:left;animation:mode-skeleton-progress .62s .18s cubic-bezier(.2,.78,.2,1) both}
+@keyframes mode-depart-white{from{opacity:0}to{opacity:1}}
+@keyframes mode-arrive-layer{0%,86%{opacity:1}100%{opacity:0}}
+@keyframes mode-arrive-white{0%,14%{opacity:1}48%,100%{opacity:0}}
+@keyframes mode-arrive-skeleton{0%{opacity:0;transform:scale(1.012)}18%,86%{opacity:1;transform:none}100%{opacity:0;transform:none}}
 @keyframes mode-skeleton-sidebar{from{opacity:0;transform:translateX(-22px)}to{opacity:1;transform:none}}
 @keyframes mode-skeleton-header{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 @keyframes mode-skeleton-page{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 @keyframes mode-skeleton-progress{from{transform:scaleX(0)}to{transform:scaleX(1)}}
 @media(max-width:900px){.mode-transition-skeleton:after{left:0}}
-@media(prefers-reduced-motion:reduce){.studentley-mode-transition,.mode-transition-white,.mode-transition-skeleton,.mode-transition-skeleton .skeleton-shell-sidebar,.mode-transition-skeleton .skeleton-shell-main>header,.mode-transition-skeleton .skeleton-page,.mode-transition-skeleton:after{animation:none!important}.mode-transition-white{display:none}.mode-transition-skeleton{opacity:1;transform:none}}
+@media(prefers-reduced-motion:reduce){.studentley-mode-transition,.mode-transition-white,.mode-transition-skeleton,.mode-transition-skeleton .skeleton-shell-sidebar,.mode-transition-skeleton .skeleton-shell-main>header,.mode-transition-skeleton .skeleton-page,.mode-transition-skeleton:after{animation:none!important}.mode-leaving .mode-transition-white{opacity:1}.mode-arriving .mode-transition-white{display:none}.mode-arriving .mode-transition-skeleton{opacity:1;transform:none}}
