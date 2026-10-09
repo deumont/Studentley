@@ -5,17 +5,16 @@ import { useApp } from '../context/AppContext'
 import { Button, EmptyState, Loader, formatDate, greeting } from '../components/UI'
 
 const isToday = value => { const date = new Date(value), today = new Date(); return date.toDateString() === today.toDateString() }
-const future = value => new Date(value) >= new Date(new Date().setHours(0, 0, 0, 0))
 
 export default function Home() {
   const { profile, data, loading, update, notify } = useApp()
   const navigate = useNavigate()
-  const topics = data?.topics || [], sessions = data?.study_sessions || [], exams = data?.exams || [], practiceResults = data?.practice_results || []
+  const topics = data?.topics || [], sessions = data?.study_sessions || [], practiceSets = data?.practice_sets || [], practiceResults = data?.practice_results || []
   const todaySessions = sessions.filter(item => isToday(item.starts_at)).sort((a, b) => new Date(a.starts_at) - new Date(b.starts_at))
   const completedToday = todaySessions.filter(item => item.completed_at).length
   const progress = todaySessions.length ? Math.round(completedToday / todaySessions.length * 100) : 0
   const nextSession = todaySessions.find(item => !item.completed_at)
-  const upcomingExams = exams.filter(item => !item.completed_at && future(item.exam_at)).sort((a, b) => new Date(a.exam_at) - new Date(b.exam_at)).slice(0, 4)
+  const mockExams = practiceSets.filter(item => item.kind === 'mock_exam').sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 4)
   const streak = useMemo(() => {
     const completed = [...sessions.map(item => item.completed_at), ...practiceResults.map(item => item.completed_at)].filter(Boolean)
     const days = new Set(completed.map(value => new Date(value).toDateString()))
@@ -39,7 +38,7 @@ export default function Home() {
       <div className="home-command-copy">
         <span className="home-eyebrow"><Sparkles /> {dayLabel}</span>
         <h1 id="home-title"><span>{greeting()}, {name}.</span> What’s your next move?</h1>
-        <p>{topics.length || todaySessions.length ? 'Your plan is ready. Pick up where you left off or create something new.' : 'A clear day is a blank canvas. Start with a document, a topic or an upcoming exam.'}</p>
+        <p>{topics.length || todaySessions.length ? 'Your plan is ready. Pick up where you left off or create something new.' : 'A clear day is a blank canvas. Start with a document, a topic or a new practice set.'}</p>
         <div className="home-command-actions">
           <button className="home-primary-action" onClick={() => navigate(nextSession ? '/study-plan' : '/practice')}>
             <span><Play /></span>
@@ -84,16 +83,16 @@ export default function Home() {
       </section>
 
       <section className="card home-panel home-exam-panel">
-        <PanelHeader index="02" icon={GraduationCap} title="Exam radar" meta="Next up" />
-        {upcomingExams.length ? <div className="home-exam-list">{upcomingExams.map((item, index) => {
-          const days = Math.ceil((new Date(item.exam_at) - new Date()) / 86400000)
+        <PanelHeader index="02" icon={GraduationCap} title="Mock exam library" meta={`${mockExams.length} saved`} />
+        {mockExams.length ? <div className="home-exam-list">{mockExams.map((item, index) => {
+          const marks = item.config?.totalMarks || item.items?.reduce((sum, question) => sum + Number(question.marks || 0), 0) || 0
           return <article key={item.id} style={{ '--item-index': index }}>
-            <time><strong>{days === 0 ? 'TODAY' : days}</strong><small>{days === 0 ? 'GO TIME' : `DAY${days === 1 ? '' : 'S'}`}</small></time>
-            <span><small>{item.subjects?.name || 'No subject'}</small><b>{item.title}</b></span>
-            <i style={{ '--exam-progress': `${Math.max(8, 100 - Math.min(days, 30) / 30 * 100)}%` }} />
+            <time><strong>{marks}</strong><small>MARKS</small></time>
+            <span><small>{item.config?.qualification || item.config?.subjectName || 'Personalized paper'}</small><b>{item.title}</b></span>
+            <i style={{ '--exam-progress': `${Math.min(100, Math.max(18, marks))}%` }} />
           </article>
-        })}</div> : <EmptyState compact icon={GraduationCap} title="No exams on the radar" text="Add your next assessment and turn the countdown into a plan."><Button variant="secondary" onClick={() => navigate('/practice')}>Add exam</Button></EmptyState>}
-        <button className="home-panel-link" onClick={() => navigate('/practice')}>View exams <ArrowRight /></button>
+        })}</div> : <EmptyState compact icon={GraduationCap} title="No mock exams yet" text="Generate a personalized paper and mark scheme for your level."><Button variant="secondary" onClick={() => navigate('/practice', { state: { openPracticeTab: 'mock', openPracticeGenerator: 'mock' } })}>Generate mock exam</Button></EmptyState>}
+        <button className="home-panel-link" onClick={() => navigate('/practice', { state: { openPracticeTab: 'mock' } })}>View mock exams <ArrowRight /></button>
       </section>
 
       <section className="home-launch-panel">
@@ -101,7 +100,7 @@ export default function Home() {
         <div className="home-launch-grid">
           <Quick tone="blue" icon={FileText} index="A" title="Upload a document" sub="Notes, PDFs, images and more" onClick={() => navigate('/upload')} />
           <Quick tone="green" icon={Lightbulb} index="B" title="Generate a visual guide" sub="Explain a topic with pictures and graphs" onClick={() => navigate('/practice', { state: { openPracticeTab: 'visuals', openPracticeGenerator: 'visual' } })} />
-          <Quick tone="orange" icon={GraduationCap} index="C" title="Create an exam" sub="Generate a paper for your exact level" onClick={() => navigate('/practice')} />
+          <Quick tone="orange" icon={GraduationCap} index="C" title="Create a mock exam" sub="Generate a paper for your exact level" onClick={() => navigate('/practice', { state: { openPracticeTab: 'mock', openPracticeGenerator: 'mock' } })} />
         </div>
       </section>
     </div>

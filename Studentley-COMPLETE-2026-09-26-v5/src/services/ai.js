@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase'
 const activityListeners = new Set()
 const activities = new Map()
 const activityLabels = {
-  analyzeDocument: 'Analyzing document', analyzeTimetable: 'Reading timetable', extractExamSchedule: 'Reading exam schedule',
+  analyzeDocument: 'Analyzing document', analyzeTimetable: 'Reading timetable',
   generateQuiz: 'Generating quiz', generateFlashcards: 'Generating flashcards', generateSummary: 'Generating summary',
   generateMockExam: 'Generating mock exam', generateStudyPlan: 'Generating study plan', analyzeProgress: 'Analyzing progress',
   generateVisualExplanation: 'Designing visual explanation',
@@ -26,7 +26,6 @@ function targetFor(operation, input, result) {
   if (['generateQuiz', 'generateFlashcards', 'generateMockExam', 'generateVisualExplanation'].includes(operation) && result?.practiceSet) return { path: '/practice', state: { openPracticeSet: result.practiceSet } }
   if (['analyzeDocument', 'generateSummary'].includes(operation)) return { path: '/upload', state: { openDocumentResult: { documentId: input.documentId, operation: operation === 'generateSummary' ? 'summary' : 'analysis' } } }
   if (operation === 'analyzeTimetable') return { path: '/study-plan' }
-  if (operation === 'extractExamSchedule') return { path: '/practice', state: { openPracticeTab: 'exams' } }
   if (operation === 'generateStudyPlan') return { path: '/study-plan' }
   if (operation === 'analyzeProgress') return { path: '/practice', state: { openPracticeTab: 'results' } }
   if (operation === 'markMockExam') return { path: '/practice', state: { openPracticeSetId: input.practiceSetId } }
@@ -51,8 +50,7 @@ export function subscribeAIActivity(listener) {
 }
 
 export const AI_OPERATIONS = Object.freeze({
-  ANALYZE_DOCUMENT: 'analyzeDocument', ANALYZE_TIMETABLE: 'analyzeTimetable',
-  EXTRACT_EXAM_SCHEDULE: 'extractExamSchedule', GENERATE_QUIZ: 'generateQuiz',
+  ANALYZE_DOCUMENT: 'analyzeDocument', ANALYZE_TIMETABLE: 'analyzeTimetable', GENERATE_QUIZ: 'generateQuiz',
   GENERATE_FLASHCARDS: 'generateFlashcards', GENERATE_SUMMARY: 'generateSummary',
   GENERATE_MOCK_EXAM: 'generateMockExam', GENERATE_STUDY_PLAN: 'generateStudyPlan',
   GENERATE_VISUAL_EXPLANATION: 'generateVisualExplanation',
@@ -79,7 +77,6 @@ export async function requestAI(operation, input) {
 
 export const analyzeDocument = input => requestAI(AI_OPERATIONS.ANALYZE_DOCUMENT, input)
 export const analyzeTimetable = input => requestAI(AI_OPERATIONS.ANALYZE_TIMETABLE, input)
-export const extractExamSchedule = input => requestAI(AI_OPERATIONS.EXTRACT_EXAM_SCHEDULE, input)
 export const generateQuiz = input => requestAI(AI_OPERATIONS.GENERATE_QUIZ, input)
 export const generateFlashcards = input => requestAI(AI_OPERATIONS.GENERATE_FLASHCARDS, input)
 export const generateSummary = input => requestAI(AI_OPERATIONS.GENERATE_SUMMARY, input)

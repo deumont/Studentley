@@ -12,7 +12,7 @@ const links = [
   ['/practice', GraduationCap, 'practice'], ['/leaderboard', Trophy, 'leaderboard'], ['/rivals', Swords, 'rivals'], ['/settings', Settings, 'settings'],
 ]
 
-const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Exams', leaderboard: 'Leaderboard', rivals: 'Rivals', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' }
+const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study Plan', practice: 'Practice & Mock Exams', leaderboard: 'Leaderboard', rivals: 'Rivals', settings: 'Settings', quote: 'Small steps every day lead to big results.', notifications: 'Notifications', caughtUp: 'You’re all caught up.', profile: 'Profile & settings', plans: 'Plans & billing', signOut: 'Sign out', proRequired: 'Requires Pro' }
 
 export default function Layout() {
   const { user, profile, data, refresh, notify } = useApp()
