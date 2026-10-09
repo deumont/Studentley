@@ -2,7 +2,7 @@ import React, { useEffect, useRef, useState } from 'react'
 import { ArrowLeft, ArrowRight, BookOpen, CircleHelp, FileQuestion, FileText, Flag, FolderOpen, Image, Lightbulb, MoreVertical, PartyPopper, Pencil, Plus, Sparkles, Trash2, UploadCloud } from 'lucide-react'
 import { useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
-import { openDocument, uploadDocument } from '../lib/data'
+import { deletePracticeSet, openDocument, uploadDocument } from '../lib/data'
 import { generateExplanation } from '../services/ai'
 import { Button, EmptyState, Field, Modal } from '../components/UI'
 
@@ -21,6 +21,7 @@ export default function TopicsWorkspace({ initialSelectedId = '' }) {
   const [selectedId, setSelectedId] = useState(initialSelectedId)
   const [modal, setModal] = useState(null)
   const [uploading, setUploading] = useState(false)
+  const [deletingSetId, setDeletingSetId] = useState('')
   const selected = topics.find(topic => topic.id === selectedId)
   useEffect(() => { if (initialSelectedId) setSelectedId(initialSelectedId) }, [initialSelectedId])
 
@@ -41,6 +42,17 @@ export default function TopicsWorkspace({ initialSelectedId = '' }) {
     await remove('topics', topic.id)
     setSelectedId('')
     notify('Topic deleted.')
+  }
+  const deleteGeneratedSet = async set => {
+    if (!window.confirm(`Delete “${set.title}”? This cannot be undone.`)) return
+    setDeletingSetId(set.id)
+    try {
+      await deletePracticeSet(set.id)
+      if (modal?.set?.id === set.id) setModal(null)
+      await refresh()
+      notify(`${isTopicSummary(set) ? 'Summary' : kindLabels[set.kind] || 'Study material'} deleted.`)
+    } catch (error) { notify(error.message || 'The study material could not be deleted.', 'error') }
+    finally { setDeletingSetId('') }
   }
   const upload = async event => {
     const files = [...(event.target.files || [])]
@@ -99,7 +111,7 @@ export default function TopicsWorkspace({ initialSelectedId = '' }) {
 
       <div className="topics-content-grid">
         <section className="card topics-content-card"><header><div><FileText /><span><b>Topic material</b><small>{topicDocuments.length} attached</small></span></div><Button variant="ghost" onClick={() => inputRef.current?.click()}><Plus /> Add</Button></header>{topicDocuments.length ? <div className="topics-resource-list">{topicDocuments.map(document => <button onClick={() => openDocument(document)} key={document.id}><span>{document.mime_type?.startsWith('image/') ? <Image /> : <FileText />}</span><span><b>{document.name}</b><small>{document.status === 'ready' ? 'AI analyzed' : 'Ready to use'}</small></span><ArrowRight /></button>)}</div> : <EmptyState compact icon={UploadCloud} title="No files yet" text="Upload material now, or generate directly from the topic name." />}</section>
-        <section className="card topics-content-card"><header><div><Sparkles /><span><b>Generated material</b><small>{topicSets.length} saved</small></span></div></header>{topicSets.length ? <div className="topics-resource-list">{topicSets.map(set => <button onClick={() => isTopicSummary(set) ? setModal({ type: 'summary-view', set }) : navigate('/practice', { state: { openPracticeSet: set } })} key={set.id}><span>{isTopicSummary(set) ? <CircleHelp /> : <Sparkles />}</span><span><b>{set.title}</b><small>{isTopicSummary(set) ? 'Focused summary' : `${kindLabels[set.kind] || set.kind} · ${set.items?.length || 0} items`}</small></span><ArrowRight /></button>)}</div> : <EmptyState compact icon={Sparkles} title="Nothing generated yet" text="Choose a tool above to create your first resource." />}</section>
+        <section className="card topics-content-card"><header><div><Sparkles /><span><b>Generated material</b><small>{topicSets.length} saved</small></span></div></header>{topicSets.length ? <div className="topics-resource-list">{topicSets.map(set => <article className="topics-generated-row" key={set.id}><button className="topics-resource-open" onClick={() => isTopicSummary(set) ? setModal({ type: 'summary-view', set }) : navigate('/practice', { state: { openPracticeSet: set } })}><span>{isTopicSummary(set) ? <CircleHelp /> : <Sparkles />}</span><span><b>{set.title}</b><small>{isTopicSummary(set) ? 'Focused summary' : `${kindLabels[set.kind] || set.kind} · ${set.items?.length || 0} items`}</small></span><ArrowRight /></button><button className="topics-resource-delete" aria-label={`Delete ${set.title}`} disabled={deletingSetId === set.id} onClick={() => deleteGeneratedSet(set)}><Trash2 /></button></article>)}</div> : <EmptyState compact icon={Sparkles} title="Nothing generated yet" text="Choose a tool above to create your first resource." />}</section>
       </div>
       {modal?.type === 'summary' && <TopicSummaryModal topic={selected} documents={topicDocuments} onClose={() => setModal(null)} onGenerated={async result => { await refresh(); setModal({ type: 'summary-view', set: result.practiceSet }); notify('Summary saved to this topic.') }} />}
       {modal?.type === 'summary-view' && <TopicSummaryView topic={selected} set={modal.set} onClose={() => setModal(null)} />}

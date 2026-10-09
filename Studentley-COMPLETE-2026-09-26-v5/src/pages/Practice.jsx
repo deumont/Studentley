@@ -1,10 +1,18 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
-import { BarChart3, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Download, FileCheck2, FileDown, FileQuestion, Flag, Image, Layers3, Lightbulb, Plus, RotateCcw, Sparkles, UploadCloud } from 'lucide-react'
+import { BarChart3, BookOpen, Check, ChevronLeft, ChevronRight, Clock3, Download, FileCheck2, FileDown, FileQuestion, Flag, Image, Layers3, Lightbulb, Plus, RotateCcw, Sparkles, Trash2, UploadCloud } from 'lucide-react'
 import { useApp } from '../context/AppContext'
-import { submitMockExamResult, submitPracticeResult, uploadDocument } from '../lib/data'
+import { deletePracticeSet, submitMockExamResult, submitPracticeResult, uploadDocument } from '../lib/data'
 import { analyzeProgress, generateFlashcards, generateMockExam, generateQuiz, generateVisualExplanation, markMockExam } from '../services/ai'
 import { Button, EmptyState, Field, Modal, PageHeading } from '../components/UI'
+
+const shortResourceTitle = (value, maximum = 48) => {
+  const clean = String(value || 'Untitled study set').replace(/\s+/g, ' ').trim()
+  if (clean.length <= maximum) return clean
+  const clipped = clean.slice(0, maximum + 1)
+  const boundary = clipped.lastIndexOf(' ')
+  return `${clipped.slice(0, boundary > maximum * 0.65 ? boundary : maximum).replace(/[,:;\-–—\s]+$/g, '')}…`
+}
 
 export default function Practice() {
   const { data, notify, refresh, profile } = useApp()
@@ -41,6 +49,16 @@ export default function Practice() {
     catch (error) { notify(error.message || 'Progress analysis failed.', 'error') }
     finally { setProgressLoading(false) }
   }
+  const deleteGeneratedSet = async set => {
+    try {
+      await deletePracticeSet(set.id)
+      await refresh()
+      notify(`${set.kind === 'mock_exam' ? 'Mock exam' : set.kind === 'visual_explanation' ? 'Visual guide' : set.kind === 'flashcards' ? 'Flashcard set' : 'Quiz'} deleted.`)
+    } catch (error) {
+      notify(error.message || 'The study set could not be deleted.', 'error')
+      throw error
+    }
+  }
   if (selected?.kind === 'quiz') return <QuizRunner quiz={selected} onClose={() => setSelected(null)} onComplete={saveResult} earnsPoints={earnsPoints} />
   if (selected?.kind === 'mock_exam') return <MarkableMockExamView exam={selected} existingResult={results.find(item => item.practice_set_id === selected.id)} onClose={() => setSelected(null)} onRecorded={async (created, aiMarked = false) => { await refresh(); notify(aiMarked ? (created ? 'Completed exam marked. Studentley Points added.' : 'AI marking saved.') : created ? 'Mock exam score saved. Studentley Points added.' : 'Mock exam score updated.') }} />
   if (selected?.kind === 'flashcards') return <FlashcardPlayer set={selected} onClose={() => setSelected(null)} />
@@ -48,10 +66,10 @@ export default function Practice() {
   return <>
     <PageHeading eyebrow="Practice" title="Build confidence from your material" text="Generate quizzes, flashcards, visual guides and personalized mock exams from the material or topic you choose." />
     <div className="tabs practice-tabs">{[['quizzes', FileQuestion, 'Quizzes'], ['flashcards', BookOpen, 'Flashcards'], ['visuals', Lightbulb, 'Visual guides'], ['mock', Flag, 'Mock exams'], ['results', BarChart3, 'Results']].map(([id, Icon, label]) => <button className={tab === id ? 'active' : ''} onClick={() => setTab(id)} key={id}><Icon />{label}</button>)}</div>
-    {tab === 'quizzes' && <PracticeLibrary icon={FileQuestion} title="No quizzes yet" text="Upload study material first, then configure a quiz from a document, subject or topic." button="Generate quiz" sets={practiceSets.filter(item => item.kind === 'quiz')} onSelect={setSelected} onGenerate={() => setModal('quiz')} />}
-    {tab === 'flashcards' && <PracticeLibrary icon={BookOpen} title="No flashcard sets yet" text="Generate a focused set from your document, subject or chosen topic." button="Generate flashcards" sets={practiceSets.filter(item => item.kind === 'flashcards')} onSelect={setSelected} onGenerate={() => setModal('flashcards')} />}
-    {tab === 'visuals' && <><section className="practice-builder visual-guide-builder"><div className="practice-intro visual"><span className="icon-bubble"><Image /></span><span className="eyebrow">Simple and visual</span><h2>Turn a topic into an illustrated PDF</h2><p>Choose uploaded material or type a topic. Studentley creates a colorful, multi-page explanation with diagrams, graphs, examples and quick checks.</p><Button onClick={() => setModal('visual')}><Sparkles /> Create visual guide</Button></div><div className="card safeguard visual-guide-sample"><BarChart3 /><h3>Made to be understood</h3><p>Each guide breaks one topic into short steps and selects useful visuals instead of filling pages with long text.</p><ul><li><Check />Infographic-style pages</li><li><Check />Graphs and labeled diagrams</li><li><Check />Worked examples</li><li><Check />Downloadable PDF</li></ul></div></section><PracticeLibrary icon={Lightbulb} kind="visual_explanation" title="No visual guides yet" text="Create your first simple explanation from a topic or uploaded document." button="Create visual guide" sets={practiceSets.filter(item => item.kind === 'visual_explanation' && item.config?.resourceType !== 'topic_summary')} onSelect={setSelected} onGenerate={() => setModal('visual')} /></>}
-    {tab === 'mock' && <><section className="practice-builder"><div className="practice-intro violet"><span className="icon-bubble"><Flag /></span><span className="eyebrow">Varied exam papers</span><h2>Create a personalized mock exam PDF</h2><p>Studentley adapts the paper to your grade, school system, subject and selected documents, using the right interaction for every question.</p><Button onClick={() => setModal('mock')}>Configure mock exam</Button></div><div className="card safeguard"><Sparkles /><h3>Built like a real paper</h3><p>Papers can combine tick boxes, matching, fill-in, tables, diagrams, calculations and substantial written responses.</p><ul><li><Check />Multi-page PDF paper</li><li><Check />Separate mark scheme</li><li><Check />Format-specific answer areas</li><li><Check />Primary, GCSE/IGCSE, IB and more</li></ul></div></section>{practiceSets.some(item => item.kind === 'mock_exam') && <PracticeLibrary icon={FileCheck2} kind="mock_exam" title="No mock exams yet" text="Configure your first mock exam from uploaded material." button="Configure mock exam" sets={practiceSets.filter(item => item.kind === 'mock_exam')} results={results} onSelect={setSelected} onGenerate={() => setModal('mock')} />}</>}
+    {tab === 'quizzes' && <PracticeLibrary icon={FileQuestion} title="No quizzes yet" text="Upload study material first, then configure a quiz from a document, subject or topic." button="Generate quiz" sets={practiceSets.filter(item => item.kind === 'quiz')} onSelect={setSelected} onDelete={deleteGeneratedSet} onGenerate={() => setModal('quiz')} />}
+    {tab === 'flashcards' && <PracticeLibrary icon={BookOpen} title="No flashcard sets yet" text="Generate a focused set from your document, subject or chosen topic." button="Generate flashcards" sets={practiceSets.filter(item => item.kind === 'flashcards')} onSelect={setSelected} onDelete={deleteGeneratedSet} onGenerate={() => setModal('flashcards')} />}
+    {tab === 'visuals' && <><section className="practice-builder visual-guide-builder"><div className="practice-intro visual"><span className="icon-bubble"><Image /></span><span className="eyebrow">Simple and visual</span><h2>Turn a topic into an illustrated PDF</h2><p>Choose uploaded material or type a topic. Studentley creates a colorful, multi-page explanation with diagrams, graphs, examples and quick checks.</p><Button onClick={() => setModal('visual')}><Sparkles /> Create visual guide</Button></div><div className="card safeguard visual-guide-sample"><BarChart3 /><h3>Made to be understood</h3><p>Each guide breaks one topic into short steps and selects useful visuals instead of filling pages with long text.</p><ul><li><Check />Infographic-style pages</li><li><Check />Graphs and labeled diagrams</li><li><Check />Worked examples</li><li><Check />Downloadable PDF</li></ul></div></section><PracticeLibrary icon={Lightbulb} kind="visual_explanation" title="No visual guides yet" text="Create your first simple explanation from a topic or uploaded document." button="Create visual guide" sets={practiceSets.filter(item => item.kind === 'visual_explanation' && item.config?.resourceType !== 'topic_summary')} onSelect={setSelected} onDelete={deleteGeneratedSet} onGenerate={() => setModal('visual')} /></>}
+    {tab === 'mock' && <><section className="practice-builder"><div className="practice-intro violet"><span className="icon-bubble"><Flag /></span><span className="eyebrow">Varied exam papers</span><h2>Create a personalized mock exam PDF</h2><p>Studentley adapts the paper to your grade, school system, subject and selected documents, using the right interaction for every question.</p><Button onClick={() => setModal('mock')}>Configure mock exam</Button></div><div className="card safeguard"><Sparkles /><h3>Built like a real paper</h3><p>Papers can combine tick boxes, matching, fill-in, tables, diagrams, calculations and substantial written responses.</p><ul><li><Check />Multi-page PDF paper</li><li><Check />Separate mark scheme</li><li><Check />Format-specific answer areas</li><li><Check />Primary, GCSE/IGCSE, IB and more</li></ul></div></section>{practiceSets.some(item => item.kind === 'mock_exam') && <PracticeLibrary icon={FileCheck2} kind="mock_exam" title="No mock exams yet" text="Configure your first mock exam from uploaded material." button="Configure mock exam" sets={practiceSets.filter(item => item.kind === 'mock_exam')} results={results} onSelect={setSelected} onDelete={deleteGeneratedSet} onGenerate={() => setModal('mock')} />}</>}
     {tab === 'results' && <section className="card list-card"><div className="section-heading"><div><h2>Practice results</h2><p>See your recent scores and get a personalized next step.</p></div><Button variant="secondary" loading={progressLoading} onClick={() => setModal('progress')}><Sparkles /> AI progress insight</Button></div>{results.length ? <div className="results-list">{results.map(result => <article key={result.id}><div><b>{result.practice_sets?.title || 'Practice set'}</b><small>{result.practice_sets?.kind?.replace('_', ' ')} · {new Date(result.completed_at).toLocaleDateString()}</small></div><strong>{Math.round(result.score_percent)}%</strong></article>)}</div> : <EmptyState icon={BarChart3} title="No practice results yet" text="Complete a quiz or mock exam to receive your first progress insight." />}</section>}
     {['quiz','flashcards','visual','mock'].includes(modal) && <GeneratorModal type={modal} initial={generatorDefaults} subjects={subjects} documents={documents} profile={profile} onClose={() => { setModal(null); setGeneratorDefaults(null) }} onGenerate={draft => generate(modal, draft)} />}
     {modal === 'progress' && <ProgressPromptModal loading={progressLoading} onClose={() => !progressLoading && setModal(null)} onGenerate={reviewProgress} />}
@@ -59,7 +77,8 @@ export default function Practice() {
   </>
 }
 
-function PracticeLibrary({ icon: Icon, kind, title, text, button, sets, results = [], onSelect, onGenerate }) {
+function PracticeLibrary({ icon: Icon, kind, title, text, button, sets, results = [], onSelect, onDelete, onGenerate }) {
+  const [deletingId, setDeletingId] = useState('')
   const collection = kind === 'mock_exam' ? 'mock exam' : kind === 'visual_explanation' ? 'visual guide' : button.includes('quiz') ? 'quiz' : 'flashcard'
   const heading = kind === 'mock_exam' ? 'Your mock exams' : kind === 'visual_explanation' ? 'Your visual guides' : collection === 'quiz' ? 'Your quizzes' : 'Your flashcard sets'
   const mockExamMeta = set => {
@@ -73,7 +92,12 @@ function PracticeLibrary({ icon: Icon, kind, title, text, button, sets, results 
       : `${Math.round(Number(result.score_percent))}% score`
     return `${qualification}${board} · ${score} · PDF`
   }
-  return <section className="card list-card"><div className="section-heading practice-library-heading"><div><h2>{sets.length ? heading : title}</h2><p>{sets.length ? `${sets.length} saved ${collection} ${sets.length === 1 ? 'set' : 'sets'}` : text}</p></div><Button variant="secondary" onClick={onGenerate}><Plus /> {button}</Button></div>{sets.length ? <div className="practice-set-grid">{sets.map(set => <button key={set.id} onClick={() => onSelect(set)}><Icon /><b>{set.title}</b><small>{kind === 'mock_exam' ? mockExamMeta(set) : kind === 'visual_explanation' ? `${set.items?.length || 0} illustrated sections · PDF` : collection === 'flashcard' ? `${set.items?.length || 0} ${set.config?.flashcardMode === 'translation' ? `${set.config?.sourceLanguage || 'Source'} → ${set.config?.targetLanguage || 'translation'}` : 'definition'} cards` : `${set.items?.length || 0} items`}</small></button>)}</div> : <EmptyState icon={Icon} title={title} text={text} />}</section>
+  const removeSet = async set => {
+    if (!window.confirm(`Delete “${set.title}”? This cannot be undone.`)) return
+    setDeletingId(set.id)
+    try { await onDelete(set) } finally { setDeletingId('') }
+  }
+  return <section className="card list-card"><div className="section-heading practice-library-heading"><div><h2>{sets.length ? heading : title}</h2><p>{sets.length ? `${sets.length} saved ${collection} ${sets.length === 1 ? 'set' : 'sets'}` : text}</p></div><Button variant="secondary" onClick={onGenerate}><Plus /> {button}</Button></div>{sets.length ? <div className="practice-set-grid">{sets.map(set => <article className="practice-set-card" key={set.id}><button className="practice-set-open" onClick={() => onSelect(set)}><Icon /><b title={set.title}>{shortResourceTitle(set.title)}</b><small>{kind === 'mock_exam' ? mockExamMeta(set) : kind === 'visual_explanation' ? `${set.items?.length || 0} illustrated sections · PDF` : collection === 'flashcard' ? `${set.items?.length || 0} ${set.config?.flashcardMode === 'translation' ? `${set.config?.sourceLanguage || 'Source'} → ${set.config?.targetLanguage || 'translation'}` : 'definition'} cards` : `${set.items?.length || 0} items`}</small></button><button className="practice-set-delete" aria-label={`Delete ${set.title}`} disabled={deletingId === set.id} onClick={() => removeSet(set)}><Trash2 /></button></article>)}</div> : <EmptyState icon={Icon} title={title} text={text} />}</section>
 }
 
 function GeneratorModal({ type, initial, subjects, documents, profile, onClose, onGenerate }) {

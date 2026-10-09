@@ -187,3 +187,11 @@ export async function submitMockExamResult(practiceSetId, scorePercent) {
   if (!response.ok) throw new Error(result.error || 'The mock exam score could not be saved.')
   return result
 }
+
+export async function deletePracticeSet(practiceSetId) {
+  const { data } = await supabase.auth.getSession()
+  const response = await fetch('/api/practice-set', { method: 'DELETE', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token || ''}` }, body: JSON.stringify({ practiceSetId }) })
+  const result = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error(result.error || 'The study set could not be deleted.')
+  return result
+}
