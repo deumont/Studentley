@@ -6,6 +6,7 @@ import { markNotificationsRead } from '../lib/data'
 import { supabase } from '../lib/supabase'
 import { Button, formatDate, Modal, ProfileAvatar } from './UI'
 import BrandWordmark from './BrandWordmark'
+import SlidingNavIndicator from './SlidingNavIndicator'
 
 const links = [
   ['/app', Home, 'home'], ['/upload', FileUp, 'upload'], ['/study-plan', CalendarDays, 'studyPlan'],
@@ -17,7 +18,7 @@ const shellCopy = { home: 'Home', upload: 'Upload Document', studyPlan: 'Study P
 export default function Layout() {
   const { user, profile, data, refresh, notify } = useApp()
   const [mobile, setMobile] = useState(false), [account, setAccount] = useState(false), [notifications, setNotifications] = useState(false)
-  const navigate = useNavigate(), menuRef = useRef()
+  const navigate = useNavigate(), location = useLocation(), menuRef = useRef(), primaryNavRef = useRef()
   const name = profile?.display_name || 'Student'
   const isIsrPlus = profile?.school_plan && profile?.subscription_plan === 'plus'
   const copy = shellCopy
@@ -29,7 +30,7 @@ export default function Layout() {
     {mobile && <button className="mobile-scrim" aria-label="Close navigation" onClick={() => setMobile(false)} />}
     <aside className={`sidebar ${mobile ? 'open' : ''}`}>
       <div className="sidebar-top"><NavLink to="/app" className="brand dashboard-brand" onClick={() => setMobile(false)}><BrandWordmark /></NavLink><button className="close-nav" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <nav aria-label="Primary">{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{copy[label]}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label={copy.proRequired} />}</NavLink>)}</nav>
+      <nav aria-label="Primary" ref={primaryNavRef}><SlidingNavIndicator navRef={primaryNavRef} route={location.pathname} className="sidebar-active-indicator" />{links.map(([to, Icon, label, proOnly]) => <NavLink end={to === '/app'} to={to} key={to} onClick={() => setMobile(false)}><Icon /><span>{copy[label]}</span>{proOnly && profile?.subscription_plan !== 'pro' && <Crown className="nav-plan-crown" aria-label={copy.proRequired} />}</NavLink>)}</nav>
       <div className="sidebar-quote"><Sparkles /><p>{isIsrPlus ? 'ISR PLUS PLAN' : copy.quote}</p></div>
     </aside>
     <main className="main-area">

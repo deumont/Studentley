@@ -406,6 +406,27 @@ body.quiz-show-mode{
 
 @keyframes skeleton-shimmer{to{transform:translateX(110%)}}
 @media(max-width:900px){.skeleton-shell-loader{grid-template-columns:1fr}.skeleton-shell-sidebar{display:none}.skeleton-shell-main>header{padding:0 22px}.skeleton-stat-row{grid-template-columns:1fr 1fr}.skeleton-stat-row .skeleton-stat:last-child{display:none}.skeleton-panel-row{grid-template-columns:1fr}.skeleton-card-grid{grid-template-columns:1fr 1fr}.skeleton-dashboard-metrics{grid-template-columns:repeat(3,minmax(120px,180px))}.skeleton-dashboard-cards{grid-template-columns:1fr 1fr}.skeleton-dashboard-cards .skeleton-panel:last-child{display:none}.skeleton-rivals-hero{grid-template-columns:1fr 190px}.skeleton-rank-orb{width:170px;height:170px}.skeleton-rivals-stats{grid-template-columns:1fr 1fr}.skeleton-rank-road{grid-template-columns:repeat(3,1fr)}.skeleton-week{overflow:hidden}.skeleton-settings-grid{grid-template-columns:1fr}.skeleton-settings-grid .skeleton-panel:first-child{min-height:240px}}
+
+/* One shared desktop selection border glides between navigation destinations. */
+.sidebar-active-indicator,.rivals-active-indicator{display:none}
+@media(min-width:801px){
+  .sidebar nav{position:relative;isolation:isolate}
+  .sidebar nav a{position:relative;z-index:1}
+  .sidebar nav a.active{background:transparent}
+  .sidebar-active-indicator{position:absolute;z-index:0;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,var(--blue) 42%,var(--line));border-left:4px solid var(--blue);border-radius:15px;background:color-mix(in srgb,var(--blue-soft) 84%,transparent);box-shadow:0 7px 20px color-mix(in srgb,var(--blue) 10%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
+  .sidebar-active-indicator.visible{opacity:1}
+  .sidebar nav a.active:hover{transform:none}
+}
+@media(min-width:821px){
+  .rivals-sidebar nav{position:relative;isolation:isolate}
+  .rivals-sidebar nav a{z-index:1}
+  .rivals-sidebar nav a.active{background:transparent;box-shadow:none}
+  .rivals-sidebar nav a:after{display:none}
+  .rivals-active-indicator{position:absolute;z-index:0;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,var(--rival) 64%,#fff);border-left:4px solid #8df0c0;border-radius:14px;background:linear-gradient(110deg,var(--rival),var(--rival-dark));box-shadow:0 10px 24px color-mix(in srgb,var(--rival) 24%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
+  .rivals-active-indicator.visible{opacity:1}
+  .rivals-sidebar nav a.active:hover{transform:none}
+}
+@media(prefers-reduced-motion:reduce){.sidebar-active-indicator,.rivals-active-indicator{transition:none!important}}
 @media(max-width:600px){.skeleton-loader.full-page{padding:18px}.skeleton-heading-row{align-items:flex-start}.skeleton-heading-row>div{width:100%}.skeleton-heading-action,.skeleton-rules{display:none}.skeleton-page-title{height:39px}.skeleton-stat-row{grid-template-columns:1fr}.skeleton-stat-row .skeleton-stat:nth-child(2){display:none}.skeleton-panel-row .skeleton-panel:last-child{display:none}.skeleton-panel{min-height:390px;padding:18px}.skeleton-shell-main>.skeleton-status-label+.skeleton-page{width:calc(100% - 28px)}.skeleton-card-grid{grid-template-columns:1fr}.skeleton-dashboard-metrics{grid-template-columns:repeat(3,1fr);gap:10px}.skeleton-dashboard-cards{grid-template-columns:1fr}.skeleton-dashboard-cards .skeleton-panel:nth-child(2){display:none}.skeleton-podium{gap:7px}.skeleton-podium-place{width:31%;padding:16px 8px}.skeleton-podium-avatar{width:48px;height:48px}.skeleton-rivals-hero{grid-template-columns:1fr;min-height:250px;padding:24px}.skeleton-rank-orb{display:none}.skeleton-rivals-stats{gap:8px}.skeleton-ranked-form>div{grid-template-columns:1fr}.skeleton-ranked-form .skeleton-field:nth-child(n+3){display:none}.skeleton-rank-road{grid-template-columns:repeat(2,1fr)}.skeleton-arena-header,.skeleton-quiz-top{grid-template-columns:70px 1fr 60px;padding:12px}.skeleton-arena-body,.skeleton-show-stage{padding:28px 18px}.skeleton-arena-body>div,.skeleton-show-stage>div{grid-template-columns:1fr}.skeleton-question{width:100%;height:95px}.skeleton-option{height:65px}.skeleton-week{grid-template-columns:repeat(3,1fr)}.skeleton-week>div:nth-child(n+4){display:none}.skeleton-tabs>span:nth-child(n+3){display:none}.skeleton-message{width:80%}.skeleton-message.right{width:65%}}
 @media(prefers-reduced-motion:reduce){.skeleton-block:after{animation:none;transform:none;background:transparent}}
 @media(max-width:900px){.skeleton-party-hero{grid-template-columns:1fr 190px}}
