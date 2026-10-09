@@ -99,7 +99,7 @@ function RouteTransition({ pathname }) {
     const switchingToStudentley = isRivalsPath(previous) && isStudentleyPath(pathname)
     if (switchingToRivals || switchingToStudentley) {
       setDestination(switchingToRivals ? 'rivals' : 'studentley')
-      const timer = window.setTimeout(() => setDestination(null), 820)
+      const timer = window.setTimeout(() => setDestination(null), 1650)
       return () => window.clearTimeout(timer)
     }
     const publicHandoff = previous === '/' || previous === '/plans'
@@ -113,6 +113,17 @@ function RouteTransition({ pathname }) {
 
   if (!destination) return null
   const modeHandoff = destination === 'rivals' || destination === 'studentley'
+  if (modeHandoff) {
+    const studentleyVariant = pathname === '/upload' ? 'documents' : pathname === '/study-plan' ? 'planner' : pathname === '/practice' ? 'practice' : pathname === '/leaderboard' ? 'leaderboard' : pathname === '/settings' ? 'settings' : 'dashboard'
+    const rivalsVariant = pathname.startsWith('/rivals/ranked') ? 'ranked' : pathname.startsWith('/rivals/friends') ? 'friends' : pathname.startsWith('/rivals/party') ? 'party' : pathname.startsWith('/rivals/quizzes') ? 'library' : pathname.startsWith('/rivals/match') ? 'arena' : 'rivals'
+    const skeletonVariant = destination === 'rivals' ? rivalsVariant : studentleyVariant
+    return <div className={`studentley-mode-transition mode-to-${destination}`} role="status" aria-live="polite">
+      <span className="mode-transition-white" aria-hidden="true" />
+      <div className="mode-transition-skeleton">
+        <Loader full shell variant={skeletonVariant} label={destination === 'rivals' ? 'Loading Rivals…' : 'Loading Studentley…'} />
+      </div>
+    </div>
+  }
   return <div className={`studentley-route-transition route-to-${destination}`} role="status" aria-live="polite">
     <span className="route-transition-wash" aria-hidden="true" />
     {destination === 'dashboard' && <div className="route-build-shell" aria-hidden="true">
@@ -128,8 +139,8 @@ function RouteTransition({ pathname }) {
       </main>
     </div>}
     <div className="route-transition-status">
-      {modeHandoff ? <div className="route-mode-switch" aria-hidden="true"><span className="route-mode-badge studentley">S</span><i><b /></i><span className="route-mode-badge rivals">R</span></div> : <div className="route-transition-mark"><span>S</span><i /></div>}
-      <p>{destination === 'dashboard' ? 'Building your dashboard' : destination === 'rivals' ? 'Entering Rivals' : destination === 'studentley' ? 'Returning to Studentley' : 'Opening Studentley'}</p>
+      <div className="route-transition-mark"><span>S</span><i /></div>
+      <p>{destination === 'dashboard' ? 'Building your dashboard' : 'Opening Studentley'}</p>
       {destination === 'dashboard' && <span className="route-build-progress"><i /></span>}
     </div>
   </div>
