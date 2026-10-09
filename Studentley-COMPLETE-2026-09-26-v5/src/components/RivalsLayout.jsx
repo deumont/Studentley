@@ -1,10 +1,9 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { ArrowLeft, Gauge, Library, Menu, PartyPopper, Settings, Swords, Trophy, Users, X } from 'lucide-react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import BrandWordmark from './BrandWordmark'
 import { ProfileAvatar } from './UI'
 import { useApp } from '../context/AppContext'
-import SlidingNavIndicator from './SlidingNavIndicator'
 
 const links = [
   ['/rivals', Gauge, 'Overview', true],
@@ -18,7 +17,6 @@ export default function RivalsLayout() {
   const { user, profile } = useApp()
   const location = useLocation()
   const [mobile, setMobile] = useState(false)
-  const rivalsNavRef = useRef()
   useEffect(() => { document.title = 'Studentley Rivals' }, [])
   useEffect(() => { setMobile(false) }, [location.pathname])
   const name = profile?.display_name || 'Student'
@@ -26,7 +24,7 @@ export default function RivalsLayout() {
     {mobile && <button className="rivals-scrim" onClick={() => setMobile(false)} aria-label="Close Rivals navigation" />}
     <aside className={`rivals-sidebar ${mobile ? 'open' : ''}`}>
       <div className="rivals-brand-row"><NavLink to="/rivals" className="rivals-brand"><BrandWordmark /><span><Swords /> Rivals</span></NavLink><button className="rivals-close" onClick={() => setMobile(false)} aria-label="Close navigation"><X /></button></div>
-      <nav aria-label="Rivals navigation" ref={rivalsNavRef}><SlidingNavIndicator navRef={rivalsNavRef} route={location.pathname} className="rivals-active-indicator" />{links.map(([to, Icon, label, end]) => <NavLink end={end} to={to} key={to}><Icon /><span>{label}</span></NavLink>)}</nav>
+      <nav aria-label="Rivals navigation">{links.map(([to, Icon, label, end]) => <NavLink end={end} to={to} key={to}><Icon /><span>{label}</span></NavLink>)}</nav>
       <div className="rivals-sidebar-bottom"><NavLink to="/settings"><Settings /> Settings</NavLink><NavLink to="/app" className="rivals-return"><ArrowLeft /> Studentley dashboard</NavLink></div>
     </aside>
     <main className="rivals-main">
