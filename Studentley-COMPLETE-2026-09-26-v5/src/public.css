@@ -206,5 +206,7 @@
 @keyframes mode-skeleton-header{from{opacity:0;transform:translateY(-12px)}to{opacity:1;transform:none}}
 @keyframes mode-skeleton-page{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:none}}
 @keyframes mode-skeleton-progress{from{transform:scaleX(0)}to{transform:scaleX(1)}}
+/* Keep the newly mounted destination at animation frame zero behind the loader. */
+#root:has(>.studentley-mode-transition)>.app-shell *,#root:has(>.studentley-mode-transition)>.rivals-shell *{animation-play-state:paused!important}
 @media(max-width:900px){.mode-transition-skeleton:after{left:0}}
 @media(prefers-reduced-motion:reduce){.studentley-mode-transition,.mode-transition-white,.mode-transition-skeleton,.mode-transition-skeleton .skeleton-shell-sidebar,.mode-transition-skeleton .skeleton-shell-main>header,.mode-transition-skeleton .skeleton-page,.mode-transition-skeleton:after{animation:none!important}.mode-leaving .mode-transition-white{opacity:1}.mode-arriving .mode-transition-white{display:none}.mode-arriving .mode-transition-skeleton{opacity:1;transform:none}}
