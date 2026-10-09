@@ -3,7 +3,6 @@ import { ArrowLeft, BookOpen, CalendarCheck, CheckCircle2, Eye, EyeOff, FileText
 import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { appUrl, supabase } from '../lib/supabase'
-import { isIsrEmail, SCHOOL_OPTIONS } from '../lib/schools'
 import { Button, ErrorState, Field } from '../components/UI'
 
 const benefits = [
@@ -20,8 +19,7 @@ export default function Auth() {
   useEffect(() => { if (path === '/signup' || path.includes('create')) setMode('signup'); else if (path.includes('forgot')) setMode('forgot'); else if (path.includes('reset')) setMode('reset'); else if (path.includes('verify')) setMode('verify'); else setMode('signin') }, [path])
   useEffect(() => { document.title = `${mode === 'signup' ? 'Create account' : mode === 'signin' ? 'Sign in' : mode === 'forgot' || mode === 'recovery-sent' ? 'Reset password' : mode === 'reset' ? 'Choose a new password' : 'Verify your email'} — Studentley` }, [mode])
   if (session && mode !== 'reset') {
-    const loginBypassesOnboarding = sessionStorage.getItem('studentley-login-bypass-onboarding') === session.user.id
-    const onboardingRequired = !loginBypassesOnboarding && session.user?.user_metadata?.onboarding_required === true && profile?.onboarding_complete === false
+    const onboardingRequired = profile?.onboarding_complete !== true
     return <Navigate to={onboardingRequired ? '/onboarding' : '/app'} replace />
   }
 
@@ -33,16 +31,13 @@ export default function Auth() {
       if (mode === 'signup') {
         if (form.password.length < 8) throw new Error('Use at least 8 characters for your password.')
         if (form.password !== form.confirm) throw new Error('The passwords do not match.')
-        if (!form.school) throw new Error('Please choose your school.')
         if (!form.terms) throw new Error('Please accept the Terms and Privacy Policy.')
-        const { error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { emailRedirectTo: appUrl('/auth/verify'), data: { display_name: form.name, date_of_birth: form.dob, school: form.school, timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, onboarding_required: true } } })
+        const { error: authError } = await supabase.auth.signUp({ email: form.email, password: form.password, options: { emailRedirectTo: appUrl('/onboarding'), data: { display_name: form.email.split('@')[0], timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, onboarding_required: true } } })
         if (authError) throw authError
         setMode('verify'); navigate('/auth/verify')
       } else if (mode === 'signin') {
-        const { data: signedIn, error: authError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
+        const { error: authError } = await supabase.auth.signInWithPassword({ email: form.email, password: form.password })
         if (authError) throw authError
-        sessionStorage.setItem('studentley-login-bypass-onboarding', signedIn.user.id)
-        if (signedIn.user?.user_metadata?.onboarding_required === true) await supabase.auth.updateUser({ data: { ...signedIn.user.user_metadata, onboarding_required: false } })
       } else if (mode === 'forgot') {
         const { error: authError } = await supabase.auth.resetPasswordForEmail(form.email, { redirectTo: appUrl('/reset-password') })
         if (authError) throw authError
@@ -59,6 +54,15 @@ export default function Auth() {
     finally { setLoading(false) }
   }
 
+  const signInWithGoogle = async () => {
+    setLoading(true); setError('')
+    try {
+      if (!configured) throw new Error('Connect Supabase to enable Google sign-in.')
+      const { error: authError } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: appUrl('/onboarding'), queryParams: { prompt: 'select_account' } } })
+      if (authError) throw authError
+    } catch (value) { setError(value.message || 'Google sign-in could not be started.'); setLoading(false) }
+  }
+
   const title = mode === 'signup' ? 'Create your account' : mode === 'forgot' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Welcome back'
   const subtitle = mode === 'signup' ? 'Start with a clean workspace shaped around your school life.' : mode === 'forgot' ? 'We’ll email you a secure reset link.' : mode === 'reset' ? 'Use at least eight characters.' : 'Sign in to continue where you left off.'
   return <main className="auth-page"><section className="auth-story"><Link to="/" className="brand light"><span>S</span><b>Studentley</b></Link><div className="auth-story-content"><span className="eyebrow light">Your school life, in one calm place</span><h1>Make every study session count.</h1><p>Build a personal system from your subjects, schedule, exams and material—never from made-up data.</p><div className="benefits">{benefits.map(([Icon, text]) => <div key={text}><span><Icon /></span>{text}</div>)}</div></div><p className="privacy-note"><ShieldCheck /> Private by design. Your school data belongs to you.</p></section>
@@ -68,8 +72,8 @@ export default function Auth() {
         <Link to="/" className="mobile-brand"><span>S</span>Studentley</Link><h2>{title}</h2><p className="muted">{subtitle}</p>
         {error && <ErrorState text={error} />}
         {mode === 'reset' && !authLoading && !session && <ErrorState text="This password reset link is invalid or has expired. Request a new reset link." />}
+        {(mode === 'signin' || mode === 'signup') && <><button type="button" className="google-auth-button" disabled={loading} onClick={signInWithGoogle}><span>G</span> Continue with Google</button><div className="auth-divider"><span>or continue with email</span></div></>}
         <form onSubmit={submit}>
-          {mode === 'signup' && <><Field label="Your name"><input required autoComplete="name" value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} placeholder="What should we call you?" /></Field><Field label="Date of birth" hint="Used privately for age-appropriate account handling."><input required type="date" value={form.dob} onChange={e => setForm({ ...form, dob: e.target.value })} /></Field><Field label="School" hint={form.school === 'ISR' ? isIsrEmail(form.email) ? 'ISR email recognized. Plus School activates after email verification.' : 'Plus School requires your five-digit ISR email, for example 13964@isr-school.de.' : 'Choose the school you attend.'}><select required value={form.school} onChange={e => setForm({ ...form, school: e.target.value })}><option value="">Choose your school</option>{SCHOOL_OPTIONS.map(option => <option value={option.value} key={option.value}>{option.label}</option>)}</select></Field></>}
           {mode !== 'reset' && <Field label="Email"><input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" /></Field>}
           {mode !== 'forgot' && <Field label={mode === 'reset' ? 'New password' : 'Password'}><div className="password-input"><input required type={show ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" /><button type="button" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff /> : <Eye />}</button></div></Field>}
           {(mode === 'signup' || mode === 'reset') && <Field label="Confirm password"><input required type="password" autoComplete="new-password" value={form.confirm} onChange={e => setForm({ ...form, confirm: e.target.value })} /></Field>}

@@ -360,10 +360,14 @@ function examLevel(input, profile) {
   const requested = String(input.qualification || '').trim()
   if (requested) return requested
   const system = String(profile?.school_system || '').trim()
-  if (system) return system
   const grade = String(input.gradeYear || profile?.grade_year || '')
   const number = Number(grade.match(/\d+/)?.[0])
-  return Number.isFinite(number) && number <= 6 ? 'Primary' : 'GCSE'
+  if (system === 'British') return number <= 6 ? 'Primary' : number >= 11 ? 'A-Level' : 'GCSE'
+  if (system === 'American') return number >= 11 ? 'AP' : number <= 6 ? 'Primary' : 'school-level'
+  if (system === 'IB') return number <= 5 ? 'Primary' : 'IB'
+  if (system === 'German / Abitur') return number >= 11 ? 'Abitur' : 'school-level'
+  if (system && system !== 'Other') return system
+  return Number.isFinite(number) && number <= 6 ? 'Primary' : 'school-level'
 }
 
 function instructionFor(operation, input, context) {

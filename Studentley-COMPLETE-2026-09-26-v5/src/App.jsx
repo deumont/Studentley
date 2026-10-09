@@ -21,6 +21,7 @@ import RivalsLayout from './components/RivalsLayout'
 import RivalsDashboard, { FriendRivals, RankedRivals, RivalMatch, RivalQuizLibrary } from './pages/Rivals'
 import StudyPartyHome, { StudyPartyRoom } from './pages/StudyParty'
 import ActiveQuizShowRejoin from './components/ActiveQuizShowRejoin'
+import ProductTour from './components/ProductTour'
 
 function Protected({ children }) {
   const { configured, session, authLoading, profile, workspaceLoaded } = useApp()
@@ -30,8 +31,7 @@ function Protected({ children }) {
   const standalone = skeletonVariant === 'quiz-show' || skeletonVariant === 'onboarding'
   if (authLoading || (session && !workspaceLoaded)) return <Loader full shell={!standalone} variant={skeletonVariant} label="Loading Studentley…" />
   if (!configured || !session) return <Navigate to="/login" replace state={{ from: location }} />
-  const loginBypassesOnboarding = sessionStorage.getItem('studentley-login-bypass-onboarding') === session.user.id
-  const onboardingRequired = !loginBypassesOnboarding && session.user?.user_metadata?.onboarding_required === true && profile?.onboarding_complete === false
+  const onboardingRequired = profile?.onboarding_complete !== true
   if (onboardingRequired && location.pathname !== '/onboarding') return <Navigate to="/onboarding" replace />
   if (profile && location.pathname === '/onboarding' && !onboardingRequired) return <Navigate to="/app" replace />
   return children
@@ -82,6 +82,7 @@ export default function App() {
     </Routes>
     {!gameMode && <GenerationStatus />}
     {!gameMode && session && <ActiveQuizShowRejoin />}
+    {!gameMode && session && <ProductTour />}
     {!gameMode && notice && <div className={`toast ${notice.type}`} role="status">{notice.type === 'error' ? '!' : '✓'} {notice.text}</div>}
   </>
 }
