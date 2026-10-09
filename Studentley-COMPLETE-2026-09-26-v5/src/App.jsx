@@ -93,6 +93,15 @@ function RouteTransition({ pathname }) {
   useLayoutEffect(() => {
     const previous = previousPath.current
     previousPath.current = pathname
+    const isRivalsPath = path => path === '/rivals' || path.startsWith('/rivals/')
+    const isStudentleyPath = path => /^\/(?:app|upload|study-plan|practice|leaderboard|settings)(?:\/|$)/.test(path)
+    const switchingToRivals = isStudentleyPath(previous) && isRivalsPath(pathname)
+    const switchingToStudentley = isRivalsPath(previous) && isStudentleyPath(pathname)
+    if (switchingToRivals || switchingToStudentley) {
+      setDestination(switchingToRivals ? 'rivals' : 'studentley')
+      const timer = window.setTimeout(() => setDestination(null), 820)
+      return () => window.clearTimeout(timer)
+    }
     const publicHandoff = previous === '/' || previous === '/plans'
     const returningToPublic = pathname === '/' || pathname === '/plans'
     const betweenPublicAndDashboard = (publicHandoff && pathname === '/app') || (previous === '/app' && returningToPublic)
@@ -103,6 +112,7 @@ function RouteTransition({ pathname }) {
   }, [pathname])
 
   if (!destination) return null
+  const modeHandoff = destination === 'rivals' || destination === 'studentley'
   return <div className={`studentley-route-transition route-to-${destination}`} role="status" aria-live="polite">
     <span className="route-transition-wash" aria-hidden="true" />
     {destination === 'dashboard' && <div className="route-build-shell" aria-hidden="true">
@@ -118,8 +128,8 @@ function RouteTransition({ pathname }) {
       </main>
     </div>}
     <div className="route-transition-status">
-      <div className="route-transition-mark"><span>S</span><i /></div>
-      <p>{destination === 'dashboard' ? 'Building your dashboard' : 'Opening Studentley'}</p>
+      {modeHandoff ? <div className="route-mode-switch" aria-hidden="true"><span className="route-mode-badge studentley">S</span><i><b /></i><span className="route-mode-badge rivals">R</span></div> : <div className="route-transition-mark"><span>S</span><i /></div>}
+      <p>{destination === 'dashboard' ? 'Building your dashboard' : destination === 'rivals' ? 'Entering Rivals' : destination === 'studentley' ? 'Returning to Studentley' : 'Opening Studentley'}</p>
       {destination === 'dashboard' && <span className="route-build-progress"><i /></span>}
     </div>
   </div>
