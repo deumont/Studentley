@@ -412,17 +412,17 @@ body.quiz-show-mode{
 @media(min-width:801px){
   .sidebar nav{position:relative;isolation:isolate}
   .sidebar nav a{position:relative;z-index:1}
-  .sidebar nav a.active{background:transparent}
-  .sidebar-active-indicator{position:absolute;z-index:0;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,var(--blue) 42%,var(--line));border-left:4px solid var(--blue);border-radius:15px;background:color-mix(in srgb,var(--blue-soft) 84%,transparent);box-shadow:0 7px 20px color-mix(in srgb,var(--blue) 10%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
+  .sidebar nav a.active{background:var(--blue-soft)}
+  .sidebar-active-indicator{position:absolute;z-index:2;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,var(--blue) 42%,var(--line));border-left:4px solid var(--blue);border-radius:15px;background:transparent;box-shadow:0 7px 20px color-mix(in srgb,var(--blue) 10%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
   .sidebar-active-indicator.visible{opacity:1}
   .sidebar nav a.active:hover{transform:none}
 }
 @media(min-width:821px){
   .rivals-sidebar nav{position:relative;isolation:isolate}
   .rivals-sidebar nav a{z-index:1}
-  .rivals-sidebar nav a.active{background:transparent;box-shadow:none}
+  .rivals-sidebar nav a.active{background:linear-gradient(110deg,var(--rival),var(--rival-dark));box-shadow:0 10px 24px color-mix(in srgb,var(--rival) 24%,transparent)}
   .rivals-sidebar nav a:after{display:none}
-  .rivals-active-indicator{position:absolute;z-index:0;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,var(--rival) 64%,#fff);border-left:4px solid #8df0c0;border-radius:14px;background:linear-gradient(110deg,var(--rival),var(--rival-dark));box-shadow:0 10px 24px color-mix(in srgb,var(--rival) 24%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
+  .rivals-active-indicator{position:absolute;z-index:2;display:block;left:0;right:0;top:0;border:1px solid color-mix(in srgb,#8df0c0 72%,#fff);border-left:4px solid #8df0c0;border-radius:14px;background:transparent;box-shadow:0 10px 24px color-mix(in srgb,var(--rival) 24%,transparent);opacity:0;pointer-events:none;transition:transform .38s cubic-bezier(.2,.85,.25,1),height .3s cubic-bezier(.2,.85,.25,1),opacity .16s ease}
   .rivals-active-indicator.visible{opacity:1}
   .rivals-sidebar nav a.active:hover{transform:none}
 }
