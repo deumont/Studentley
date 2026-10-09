@@ -4,6 +4,7 @@ import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useApp } from '../context/AppContext'
 import { appUrl, supabase } from '../lib/supabase'
 import { Button, ErrorState, Field } from '../components/UI'
+import GoogleIdentityButton from '../components/GoogleIdentityButton'
 
 const benefits = [
   [CalendarCheck, 'Plan around your real week'], [FileText, 'Keep school material organised'], [BookOpen, 'Practice from your own notes'],
@@ -54,13 +55,14 @@ export default function Auth() {
     finally { setLoading(false) }
   }
 
-  const signInWithGoogle = async () => {
+  const signInWithGoogle = async (token, nonce) => {
     setLoading(true); setError('')
     try {
       if (!configured) throw new Error('Connect Supabase to enable Google sign-in.')
-      const { error: authError } = await supabase.auth.signInWithOAuth({ provider: 'google', options: { redirectTo: appUrl('/onboarding'), queryParams: { prompt: 'select_account' } } })
+      const { error: authError } = await supabase.auth.signInWithIdToken({ provider: 'google', token, nonce })
       if (authError) throw authError
-    } catch (value) { setError(value.message || 'Google sign-in could not be started.'); setLoading(false) }
+    } catch (value) { setError(value.message || 'Google sign-in could not be completed.') }
+    finally { setLoading(false) }
   }
 
   const title = mode === 'signup' ? 'Create your account' : mode === 'forgot' ? 'Reset your password' : mode === 'reset' ? 'Choose a new password' : 'Welcome back'
@@ -72,7 +74,7 @@ export default function Auth() {
         <Link to="/" className="mobile-brand"><span>S</span>Studentley</Link><h2>{title}</h2><p className="muted">{subtitle}</p>
         {error && <ErrorState text={error} />}
         {mode === 'reset' && !authLoading && !session && <ErrorState text="This password reset link is invalid or has expired. Request a new reset link." />}
-        {(mode === 'signin' || mode === 'signup') && <><button type="button" className="google-auth-button" disabled={loading} onClick={signInWithGoogle}><span>G</span> Continue with Google</button><div className="auth-divider"><span>or continue with email</span></div></>}
+        {(mode === 'signin' || mode === 'signup') && <><GoogleIdentityButton disabled={loading} onCredential={signInWithGoogle} onError={value => setError(value.message || 'Google sign-in is unavailable.')} /><div className="auth-divider"><span>or continue with email</span></div></>}
         <form onSubmit={submit}>
           {mode !== 'reset' && <Field label="Email"><input required type="email" autoComplete="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })} placeholder="you@example.com" /></Field>}
           {mode !== 'forgot' && <Field label={mode === 'reset' ? 'New password' : 'Password'}><div className="password-input"><input required type={show ? 'text' : 'password'} autoComplete={mode === 'signin' ? 'current-password' : 'new-password'} value={form.password} onChange={e => setForm({ ...form, password: e.target.value })} placeholder="At least 8 characters" /><button type="button" onClick={() => setShow(!show)} aria-label={show ? 'Hide password' : 'Show password'}>{show ? <EyeOff /> : <Eye />}</button></div></Field>}
@@ -89,7 +91,7 @@ export default function Auth() {
 
 function Verification({ email, configured, back }) {
   const [sent, setSent] = useState(false), [error, setError] = useState('')
-  const resend = async () => { if (!email) { setError('Return to create account and enter your email again.'); return } const { error: value } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: appUrl('/auth/verify') } }); if (value) setError(value.message); else setSent(true) }
+  const resend = async () => { if (!email) { setError('Return to create account and enter your email again.'); return } const { error: value } = await supabase.auth.resend({ type: 'signup', email, options: { emailRedirectTo: appUrl('/onboarding') } }); if (value) setError(value.message); else setSent(true) }
   return <div className="verification"><span className="verify-icon"><CheckCircle2 /></span><span className="eyebrow">Check your inbox</span><h2>Verify your email</h2><p>We sent a secure verification link{email ? <> to <b>{email}</b></> : ''}. Open it to continue to your personal setup.</p>{!configured && <ErrorState text="Supabase must be configured before verification emails can be sent." />}{error && <ErrorState text={error} />}{sent && <p className="success-note">A new verification email is on its way.</p>}<Button className="full" onClick={back}>Return to sign in</Button><button className="text-button" onClick={resend}>Resend verification email</button></div>
 }
 

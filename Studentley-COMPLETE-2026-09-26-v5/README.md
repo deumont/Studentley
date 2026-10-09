@@ -28,14 +28,14 @@ AI entry points live in `src/services/ai.js` and `/api/ai.js`. The Vercel functi
 
 1. Create a Supabase project.
 2. Install the Supabase CLI and link the project, or run the migrations in filename order. Existing projects must run `supabase/migrations/202609260004_payments_points_leaderboard.sql` for billing persistence, points, streaks, and the leaderboard.
-3. In Supabase Authentication, enable email/password sign-in and email confirmation.
+3. In Supabase Authentication, enable email/password sign-in, email confirmation, and the Google provider. Use the same Google Web client ID as `VITE_GOOGLE_CLIENT_ID`; keep the Google client secret only in Supabase.
 4. Add local and production URLs to Authentication → URL Configuration:
    - Set **Site URL** to `https://www.studentley.com`
    - `http://localhost:5173/auth/verify`
    - `http://localhost:5173/reset-password`
    - `https://www.studentley.com/auth/verify`
    - `https://www.studentley.com/reset-password`
-5. Copy `.env.example` to `.env.local` and fill in the Supabase values.
+5. Copy `.env.example` to `.env.local` and fill in the public Supabase values. `VITE_GOOGLE_CLIENT_ID` can override Studentley's current public Google Web client ID. In Google Cloud, add the local and production origins under **Authorized JavaScript origins**. No Google redirect URI is used by the frontend GIS flow.
 6. Install and run:
 
 ```bash
@@ -51,7 +51,7 @@ pnpm build
 
 ## Vercel configuration
 
-Set the Supabase and Stripe variables in the Vercel project. The AI function accepts `OPENAI_API_KEY` (recommended) and the existing `iStudent_Key_OpenAi` name. The key and `SUPABASE_SERVICE_ROLE_KEY` must remain server-only. `OPENAI_MODEL` is optional and defaults to `gpt-5-mini`.
+Set the Supabase, Stripe, and `VITE_GOOGLE_CLIENT_ID` variables in the Vercel project. The Google client ID is a public browser identifier; the Google client secret belongs only in the Supabase provider configuration and must never be added to Vercel as a `VITE_*` variable. The AI function accepts `OPENAI_API_KEY` (recommended) and the existing `iStudent_Key_OpenAi` name. The key and `SUPABASE_SERVICE_ROLE_KEY` must remain server-only. `OPENAI_MODEL` is optional and defaults to `gpt-5-mini`.
 
 For Stripe test or live mode:
 
