@@ -29,8 +29,8 @@ export default async function handler(request, response) {
           model: process.env.OPENAI_TTS_MODEL || 'gpt-4o-mini-tts',
           voice: process.env.OPENAI_QUIZ_TTS_VOICE || 'onyx',
           input,
-          instructions: 'Perform as the magnetic male host of a huge live prime-time television quiz show for teenagers. Be unmistakably enthusiastic, playful and excited—not merely friendly. Vary the delivery constantly: build suspense before questions, accelerate into countdowns, explode with joy for correct answers, sound genuinely shocked by quick buzzes, make lead changes feel enormous, and turn comebacks into headline moments. Give every player name warmth and personality. When reading multiple names, connect the final two naturally with the word “and”; never read names like a comma-separated list. Use expressive pitch, smiling energy, punchy emphasis, quick reactions and brief dramatic pauses. Light teasing is welcome when someone is behind, but it must stay kind, funny and never personal. Keep the diction crisp and human, with the energy of a sports commentator crossed with a game-show host. Never sound robotic, flat, sleepy or like a navigation voice.',
-          speed: 1.1,
+          instructions: 'Perform as an electrifying male prime-time quiz-show host for teenagers. Sound genuinely thrilled, playful and spontaneous. Keep every line tight and fast-moving: use punchy emphasis and only very brief dramatic pauses so the voice never falls behind the live game. Explode with joy for correct answers, react sharply to buzzes, build quick suspense for Double or Nothing and Poker, and make lead changes feel huge. Vary pitch, rhythm and intensity from line to line. Give player names warmth and personality. Join the final two names naturally with “and”; never read names like a comma-separated list. Light teasing must stay kind and never personal. Use crisp diction and smiling sports-commentator energy. Never sound robotic, flat, sleepy or slow.',
+          speed: 1.16,
           response_format: 'mp3',
         }),
       })

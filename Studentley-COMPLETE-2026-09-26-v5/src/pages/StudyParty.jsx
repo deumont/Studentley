@@ -6,11 +6,11 @@ import { useApp } from '../context/AppContext'
 import { uploadDocument } from '../lib/data'
 import { clearActiveQuizShow, openQuizShowTab, prepareQuizShowTab, rememberActiveQuizShow } from '../lib/activeQuizShow'
 import { getAIAudio } from '../services/ai'
-import { answerStudyParty, buzzStudyParty, continueStudyPartyHost, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, readyStudyPartyPause, requestStudyPartyPause, respondStudyPartyDouble, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown, syncStudyParty, voteStudyPartyPause } from '../services/studyParty'
+import { actStudyPartyPoker, answerStudyParty, buzzStudyParty, continueStudyPartyHost, createStudyParty, joinStudyParty, loadStudyParty, openStudyPartyQuestion, quitStudyParty, readyStudyPartyPause, requestStudyPartyPause, respondStudyPartyDouble, selectStudyPartyScoreSwap, spinStudyPartyWheel, startStudyParty, startStudyPartyCountdown, syncStudyParty, voteStudyPartyPause } from '../services/studyParty'
 
 const levels = ['Primary', 'GCSE / IGCSE', 'A-Level', 'IB', 'Abitur', 'Mixed']
 const roomSizes = [2, 3, 4, 5, 6, 7, 8]
-const roundNames = { buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice', quick_answer: 'One Word', explain_it: 'One Word', rapid_fire: 'Rapid Fire', true_false: 'True / False' }
+const roundNames = { buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice', quick_answer: 'One Word', explain_it: 'One Word', rapid_fire: 'Rapid Fire · Pick 2', true_false: 'True / False', poker: 'Poker Round' }
 const formatSeconds = milliseconds => Math.max(0, Math.ceil(milliseconds / 1000))
 
 function SetupRequired({ error }) {
@@ -201,7 +201,7 @@ export function StudyPartyRoom() {
       previousRanksRef.current = currentRanks
       return
     }
-    if (!['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)) return
+    if (!['reveal', 'double_reveal', 'poker_reveal', 'wheel_result'].includes(party.phase)) return
     const boardKey = `${party.current_question}-${party.phase}-${party.host_message}`
     if (lastBoardKeyRef.current === boardKey) return
     const changes = Object.fromEntries(party.players.map((player, index) => [player.user_id, {
@@ -311,9 +311,11 @@ export function StudyPartyRoom() {
     if (!party || party.status !== 'active' || !party.question) return
     const buzzerQuestion = Boolean(party.question.requires_buzzer)
     const buzzerQuestionLive = party.phase === 'question' && buzzerQuestion && !party.buzzed_by
-    const spokenLine = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
+    const spokenLine = ['reveal', 'double_reveal', 'wheel_result', 'poker_reveal'].includes(party.phase)
       ? party.reveal_announcement
-      : ['show_intro', 'intermission', 'double_offer', 'wheel_offer', 'pause_vote', 'paused', 'resume'].includes(party.phase)
+      : party.phase === 'poker_bet'
+        ? `${party.host_message} Here is the question. ${party.question.voice_prompt || party.question.prompt}`
+      : ['show_intro', 'intermission', 'double_offer', 'swap_offer', 'poker_ready', 'wheel_offer', 'pause_vote', 'paused', 'resume'].includes(party.phase)
         ? party.host_message
         : ''
     const key = party.phase === 'intro'
@@ -348,11 +350,11 @@ export function StudyPartyRoom() {
       }
       if (spokenLine) {
         const spoken = await queueHostLine(spokenLine)
-        const shouldContinue = ['show_intro', 'reveal', 'double_reveal', 'wheel_result', 'intermission', 'resume'].includes(party.phase)
+        const shouldContinue = ['show_intro', 'reveal', 'double_reveal', 'poker_ready', 'poker_reveal', 'wheel_result', 'intermission', 'resume'].includes(party.phase)
         if (!spoken) await new Promise(resolve => setTimeout(resolve, 1200))
         const voiceDone = markVoiceDone(party)
         if (party.is_host && shouldContinue) {
-          await new Promise(resolve => setTimeout(resolve, 250))
+          await new Promise(resolve => setTimeout(resolve, 80))
           try { await runSynchronizedTransition(() => continueStudyPartyHost(party.id), 'Waiting for every screen…') }
           catch (problem) { setError(problem.message); await load() }
         } else await voiceDone
@@ -362,7 +364,7 @@ export function StudyPartyRoom() {
       const target = party.phase === 'double_intro'
         ? `${directed?.display_name || 'Player'}, this is Double or Nothing. `
         : ''
-      const swapIntro = party.question.swap_round ? 'Score Swap Round. Everyone can answer. The winner must swap their total points with another player. ' : ''
+      const swapIntro = party.question.swap_round ? 'Score Swap Round. Get it right, then choose whose pre-question score to take. Leaders cannot swap. ' : ''
       const spoken = await queueHostLine(`${target}${swapIntro}${party.question.voice_prompt || party.question.prompt}`)
       if (!spoken) await new Promise(resolve => setTimeout(resolve, 1800))
       const voiceDone = markVoiceDone(party)
@@ -415,7 +417,7 @@ export function StudyPartyRoom() {
   const seconds = formatSeconds(remaining)
   const countdownNumber = Math.max(1, Math.min(3, Math.ceil(remaining / 1000)))
   const openingRemaining = party.question_opens_at ? Math.max(0, new Date(party.question_opens_at).getTime() - effectiveNow) : 0
-  const roundOpening = party.phase === 'question' && openingRemaining > 0
+  const roundOpening = ['question', 'poker_question'].includes(party.phase) && openingRemaining > 0
   const questionDuration = Number(party.question?.time_limit || 25) * 1000
   const questionElapsed = party.question_opens_at ? Math.max(0, effectiveNow - new Date(party.question_opens_at).getTime()) : 0
   const livePoints = Math.max(10, Math.min(200, Math.ceil(200 * (1 - Math.min(questionDuration, questionElapsed) / questionDuration))))
@@ -443,6 +445,20 @@ export function StudyPartyRoom() {
     if (pendingAction) return
     setPendingAction('double'); setWorking(true); setError(''); syncEpochRef.current += 1
     try { setParty((await respondStudyPartyDouble(party.id, accept)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
+  const chooseScoreSwap = async targetUserId => {
+    if (pendingAction) return
+    setPendingAction('score-swap'); setWorking(true); setError(''); syncEpochRef.current += 1
+    try { setParty((await selectStudyPartyScoreSwap(party.id, targetUserId)).party) }
+    catch (problem) { setError(problem.message); await load() }
+    finally { setPendingAction(''); setWorking(false) }
+  }
+  const playPoker = async (action, amount = 0) => {
+    if (pendingAction) return
+    setPendingAction('poker'); setWorking(true); setError(''); syncEpochRef.current += 1
+    try { setParty((await actStudyPartyPoker(party.id, action, amount)).party) }
     catch (problem) { setError(problem.message); await load() }
     finally { setPendingAction(''); setWorking(false) }
   }
@@ -502,12 +518,13 @@ export function StudyPartyRoom() {
 
   if (party.status === 'completed') return <StudyPartyResults party={party} onExit={leaveGame} />
 
-  const hostMessage = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
+  const hostMessage = ['reveal', 'double_reveal', 'poker_reveal', 'wheel_result'].includes(party.phase) && party.reveal_announcement ? party.reveal_announcement : party.host_message
   const doublePhase = party.phase.startsWith('double_')
   const wheelPhase = party.phase.startsWith('wheel_')
+  const pokerSetupPhase = ['poker_bet', 'poker_ready'].includes(party.phase)
   const pausePhase = ['pause_vote', 'paused', 'resume'].includes(party.phase)
-  const canRequestBreak = ['reveal', 'double_reveal', 'wheel_result', 'intermission'].includes(party.phase)
-  const showLeaderboard = ['reveal', 'double_reveal', 'wheel_result'].includes(party.phase)
+  const canRequestBreak = ['reveal', 'double_reveal', 'poker_reveal', 'wheel_result', 'intermission'].includes(party.phase)
+  const showLeaderboard = ['reveal', 'double_reveal', 'poker_reveal', 'wheel_result'].includes(party.phase)
 
   return <>
   <section className="study-party-live">
@@ -517,13 +534,13 @@ export function StudyPartyRoom() {
     {error && <ErrorState text={error} />}
     <div className={`study-party-stage ${showLeaderboard ? 'leaderboard-visible' : 'gameplay-only'}`}>
       <main className={`card study-party-question ${party.phase}`} key={`${party.current_question}-${party.phase}`}>
-        {pausePhase ? <PauseStage party={party} onVote={voteBreak} onReady={readyFromBreak} working={working} pendingAction={pendingAction} /> : party.phase === 'show_intro' ? <ShowIntroStage party={party} /> : roundOpening ? <RoundGoStage /> : wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
-          <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Winner swaps scores</b> : party.question?.is_final && <b><Crown /> Final round</b>}<time className={party.phase === 'question' && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
+        {pausePhase ? <PauseStage party={party} onVote={voteBreak} onReady={readyFromBreak} working={working} pendingAction={pendingAction} /> : party.phase === 'show_intro' ? <ShowIntroStage party={party} /> : roundOpening ? <RoundGoStage /> : wheelPhase ? <ComebackWheel party={party} onSpin={spinWheel} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'double_offer' ? <DoubleOffer party={party} onRespond={respondDouble} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'swap_offer' ? <ScoreSwapOffer party={party} onChoose={chooseScoreSwap} working={working} pendingAction={pendingAction} seconds={seconds} /> : pokerSetupPhase ? <PokerStage party={party} onAction={playPoker} working={working} pendingAction={pendingAction} seconds={seconds} /> : party.phase === 'intermission' ? <div className="study-party-intermission"><Sparkles /><span>Take a breath</span><h1>{roundNames[party.question?.round_type]}</h1><p>The next question will begin shortly.</p></div> : ['countdown', 'double_countdown'].includes(party.phase) ? <div className={`study-party-countdown ${party.phase === 'double_countdown' ? 'double' : ''}`} aria-live="assertive"><span>{party.phase === 'double_countdown' ? 'Double or Nothing' : 'Get ready'}</span><b key={countdownNumber}>{countdownNumber}</b><small>Answers open after the countdown</small></div> : doublePhase ? <DoubleStage party={party} answer={answer} setAnswer={setAnswer} onSubmit={submit} working={working} pendingAction={pendingAction} seconds={seconds} remaining={remaining} /> : <>
+          <div className="study-party-question-top"><span><Radio /> {party.question?.swap_round ? 'Score Swap Round' : roundNames[party.question?.round_type]}</span>{party.question?.swap_round ? <b><Coins /> Choose whose score you take</b> : party.question?.round_type === 'poker' ? <b><Coins /> {party.poker_round?.pot || 0}-point pot · winner takes all</b> : party.question?.is_final && <b><Crown /> Final round</b>}<time className={['question', 'poker_question'].includes(party.phase) && seconds <= 5 ? 'critical' : ''}>{party.phase === 'intro' ? <><Volume2 /> Listen</> : <><Clock3 /> {seconds}s</>}</time></div>
           <div className={`study-party-timer ${party.phase === 'intro' ? 'listening' : ''}`}><span style={{ width: party.phase === 'intro' ? '100%' : `${party.question ? Math.min(100, remaining / (party.question.time_limit * 1000) * 100) : 0}%` }} /></div>
-          <small>{party.question?.difficulty} · {party.question?.topic} · {party.phase === 'question' ? `${livePoints} points available now` : 'Up to 200 points · speed matters'}</small>
+          <small>{party.question?.difficulty} · {party.question?.topic} · {party.question?.round_type === 'poker' ? `${party.poker_round?.pot || 0} points in the pot` : ['question', 'poker_question'].includes(party.phase) ? `${livePoints} points available now` : 'Up to 200 points · speed matters'}</small>
           <h1>{party.question?.prompt}</h1>
-          {party.question?.swap_round && party.phase !== 'reveal' && <div className="study-party-swap-notice"><Coins /><span><b>Score Swap is active</b><small>The first correct player swaps their total points with another player.</small></span></div>}
-          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : party.phase === 'reveal' ? <>{party.swap_result && <SwapResult result={party.swap_result} />}<PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
+          {party.question?.swap_round && !['reveal', 'poker_reveal'].includes(party.phase) && <div className="study-party-swap-notice"><Coins /><span><b>Score Swap is active</b><small>Get it right, then choose a player and exchange your pre-question totals. No bonus points are added first.</small></span></div>}
+          {party.phase === 'intro' ? <div className="study-party-listening"><Volume2 /><b>Listen carefully…</b><span>The answer area stays locked until the voice finishes.</span></div> : ['reveal', 'poker_reveal'].includes(party.phase) ? <>{party.swap_result && <SwapResult result={party.swap_result} />}{party.phase === 'poker_reveal' && <PokerResult poker={party.poker_round} />}<PersonalQuestionResult result={party.current_user_result} /><div className="study-party-reveal"><Check /><div><small>Correct answer</small><b>{party.question?.correct_answer}</b><p>{party.question?.explanation}</p></div></div></> : <StudyPartyAnswer party={party} me={me} buzzerPlayer={buzzerPlayer} answer={answer} setAnswer={setAnswer} onBuzz={buzz} onSubmit={submit} working={working} pendingAction={pendingAction} />}
         </>}
       </main>
       {showLeaderboard && <PartyScoreboard party={party} changes={scoreChanges} leadChange={leadChange} />}
@@ -550,6 +567,53 @@ function RoundGoStage() {
   return <div className="study-party-round-sync go" role="status" aria-live="assertive"><div className="study-party-go-rings"><i /><i /><i /></div><small>Everyone is ready</small><h1>GO!</h1><p>The round opens for every player at the same moment.</p></div>
 }
 
+function ScoreSwapOffer({ party, onChoose, working, pendingAction, seconds }) {
+  const swap = party.score_swap || {}
+  return <div className="study-party-score-swap-choice">
+    <span className="study-party-swap-crown"><Coins /></span>
+    <small>Score Swap winner · {seconds}s to choose</small>
+    <h1>{swap.winner_name}, choose your swap.</h1>
+    <p>Your pre-question total is <b>{swap.winner_score || 0} points</b>. Pick a player: you receive their current score and they receive your {swap.winner_score || 0}. No question points are added before the exchange.</p>
+    {swap.is_winner ? <div className="study-party-swap-targets">{swap.targets?.map(player => <button type="button" disabled={working} onClick={() => onChoose(player.user_id)} key={player.user_id}><span><ProfileAvatar name={player.display_name} /></span><span><small>Swap with</small><b>{player.display_name}</b></span><strong>{player.score} pts</strong>{working && pendingAction === 'score-swap' ? <LoaderCircle className="spin" /> : <ArrowRight />}</button>)}</div> : <div className="study-party-double-wait"><LoaderCircle className="spin" /> Waiting for {swap.winner_name || 'the winner'} to choose a player…</div>}
+  </div>
+}
+
+function PokerStage({ party, onAction, working, pendingAction, seconds }) {
+  const poker = party.poker_round || {}
+  const me = party.players.find(player => player.is_current_user)
+  const maximum = Math.max(0, Number(me?.score || 0) + Number(poker.own_bet || 0))
+  const minimumRaise = Math.min(maximum, Math.max(1, Number(poker.current_bet || 0) + 1))
+  const [bet, setBet] = useState(minimumRaise)
+  useEffect(() => {
+    const suggested = Math.min(maximum, Math.max(minimumRaise, Number(poker.current_bet || 0) || Math.max(1, Math.round(maximum * .25))))
+    setBet(suggested)
+  }, [maximum, minimumRaise, poker.current_bet, poker.actor_user_id])
+  const actor = poker.order?.find(player => player.user_id === poker.actor_user_id)
+  const ready = party.phase === 'poker_ready'
+  const canCall = Number(poker.current_bet || 0) <= maximum
+  const canRaise = maximum > Number(poker.current_bet || 0)
+  return <div className={`study-party-poker ${ready ? 'ready' : 'betting'}`}>
+    <div className="study-party-poker-table">
+      <span className="study-party-poker-suit">♠</span><span className="study-party-poker-suit">♥</span>
+      <small>{ready ? 'Betting closed' : 'Poker Round · Place your bets'}</small>
+      <h1>{party.question?.prompt}</h1>
+      <div className="study-party-poker-pot"><Coins /><span><small>Winner-takes-all pot</small><b>{poker.pot || 0} points</b></span></div>
+      <div className="study-party-poker-players">{poker.order?.map(player => { const folded = poker.folded_user_ids?.includes(player.user_id); const active = poker.actor_user_id === player.user_id; return <article className={`${folded ? 'folded' : ''} ${active ? 'active' : ''}`} key={player.user_id}><span>{player.display_name.slice(0, 1).toUpperCase()}</span><b>{player.display_name}</b><small>{folded ? 'Folded' : `${Number(poker.bets?.[player.user_id] || 0)} bet`}</small></article> })}</div>
+    </div>
+    {ready ? <div className="study-party-poker-ready"><Sparkles /><b>All bets are locked.</b><span>The four answers are about to be revealed. Fastest correct player takes every point in the pot.</span><LoaderCircle className="spin" /></div> : poker.is_actor ? <div className="study-party-poker-controls">
+      <header><span><b>Your move</b><small>{poker.current_bet ? `${poker.current_bet} points to call` : 'Open the betting with any amount'}</small></span><strong>{bet} pts</strong></header>
+      {canRaise && <input type="range" min={minimumRaise} max={maximum} step="1" value={bet} onChange={event => setBet(Number(event.target.value))} aria-label="Poker bet amount" />}
+      <div><Button variant="secondary" disabled={working} onClick={() => onAction('fold')}>Fold</Button>{canCall && <Button variant="secondary" disabled={working} onClick={() => onAction(poker.current_bet ? 'call' : 'check')}>{poker.current_bet ? `Call ${poker.current_bet}` : 'Check'}</Button>}{canRaise && <Button className="rivals-primary" loading={working && pendingAction === 'poker'} onClick={() => onAction(poker.current_bet ? 'raise' : 'bet', bet)}>{poker.current_bet ? `Raise to ${bet}` : `Bet ${bet}`}</Button>}</div>
+      <small>{seconds}s left · You can wager up to {maximum} points</small>
+    </div> : <div className="study-party-poker-wait"><LoaderCircle className="spin" /><span><b>{actor?.display_name || 'Another player'} is deciding…</b><small>Current bet: {poker.current_bet || 0} · Your committed bet: {poker.own_bet || 0}</small></span></div>}
+  </div>
+}
+
+function PokerResult({ poker }) {
+  if (!poker) return null
+  return <div className={`study-party-poker-result ${poker.winner_user_id ? 'won' : 'empty'}`}><span>{poker.winner_user_id ? <Trophy /> : <AlertTriangle />}</span><div><small>{poker.winner_user_id ? 'Pot won' : 'No winner'}</small><b>{poker.winner_user_id ? `${poker.winner_name} takes all ${poker.pot || 0} points!` : `The ${poker.pot || 0}-point pot is lost.`}</b><p>{poker.winner_user_id ? 'Fastest correct answer wins the entire table.' : 'Nobody still in the hand answered correctly.'}</p></div></div>
+}
+
 function PauseStage({ party, onVote, onReady, working, pendingAction }) {
   const pause = party.pause || {}
   if (party.phase === 'pause_vote') return <div className="study-party-break-stage vote"><span className="study-party-break-icon"><Coffee /></span><small>Quick break request</small><h1>{pause.requested_by_name || 'A player'} wants a short pause</h1><p>Everyone has to agree. The show only pauses if every player says yes.</p><div className="study-party-break-progress"><span style={{ width: `${Math.min(100, Number(pause.vote_count || 0) / Math.max(1, Number(pause.player_count || 1)) * 100)}%` }} /></div><b>{pause.vote_count || 0} of {pause.player_count || party.players.length} agreed</b>{pause.voted ? <div className="study-party-break-wait"><LoaderCircle className="spin" /> Waiting for everyone else to vote…</div> : <div className="study-party-break-actions"><Button variant="secondary" disabled={working} onClick={() => onVote(false)}>Keep playing</Button><Button className="rivals-primary" loading={working && pendingAction === 'pause-vote'} onClick={() => onVote(true)}><Pause /> Agree to pause</Button></div>}</div>
@@ -567,7 +631,7 @@ function PersonalQuestionResult({ result }) {
 
 function SwapResult({ result }) {
   if (result.skipped) return <div className="study-party-swap-result skipped"><Crown /><div><small>No swap needed</small><b>{result.winner_name} stays on top</b><p>{result.winner_name} already has the highest score with {result.winner_score} points.</p></div></div>
-  return <div className="study-party-swap-result"><Coins /><div><small>Random Score Swap complete</small><b>{result.winner_name} ↔ {result.opponent_name}</b><p>{result.winner_name}: {result.winner_score} points · {result.opponent_name}: {result.opponent_score} points</p></div></div>
+  return <div className="study-party-swap-result"><Coins /><div><small>Chosen Score Swap complete</small><b>{result.winner_name} ↔ {result.opponent_name}</b><p>{result.winner_name}: {result.winner_score} points · {result.opponent_name}: {result.opponent_score} points</p></div></div>
 }
 
 function ComebackWheel({ party, onSpin, working, pendingAction, seconds }) {
@@ -618,13 +682,23 @@ function DoubleStage({ party, answer, setAnswer, onSubmit, working, pendingActio
 
 function StudyPartyAnswer({ party, me, buzzerPlayer, answer, setAnswer, onBuzz, onSubmit, working, pendingAction }) {
   const question = party.question
-  if (!question || party.phase !== 'question') return null
+  if (!question || !['question', 'poker_question'].includes(party.phase)) return null
   const attempted = party.attempted_user_ids.includes(me?.user_id)
   if (pendingAction === 'buzz') return <div className="study-party-answer-locked pending"><BellRing /><b>Buzzer pressed!</b><small>Claiming your answer now…</small></div>
   if (pendingAction === 'answer') return <div className="study-party-answer-locked pending"><Check /><b>Answer locked!</b><small>Updating the scoreboard…</small></div>
   if (me?.has_answered || attempted) return <div className="study-party-answer-locked"><Check /> Your answer is locked. The scoreboard appears when the question ends.</div>
+  if (party.poker_round?.is_folded) return <div className="study-party-poker-folded"><span>♠</span><b>You folded this hand.</b><small>Watch the remaining players compete for the {party.poker_round.pot || 0}-point pot.</small></div>
   if (question.requires_buzzer && !party.buzzed_by) return <button className="study-party-buzzer" disabled={working} onClick={onBuzz}><span><BellRing /></span><b>BUZZ</b><small>First tap gets the first answer</small></button>
   if (question.requires_buzzer && party.buzzed_by !== me?.user_id) return <div className="study-party-buzzed"><BellRing /><b>{buzzerPlayer?.display_name || 'Another player'} buzzed first</b><small>Get ready to steal if the answer is wrong.</small></div>
+  if (question.round_type === 'rapid_fire') {
+    const selected = Array.isArray(answer) ? answer : []
+    const toggle = option => setAnswer(value => {
+      const current = Array.isArray(value) ? value : []
+      if (current.includes(option)) return current.filter(item => item !== option)
+      return current.length < 2 ? [...current, option] : current
+    })
+    return <div className="study-party-answer rapid-fire"><header><span><Zap /> Pick exactly two answers</span><b>{selected.length}/2 selected</b></header><div className="study-party-options rapid-fire-options">{question.options.map((option, index) => <button type="button" disabled={working} className={selected.includes(option) ? 'selected' : ''} onClick={() => toggle(option)} key={option}><b>{String.fromCharCode(65 + index)}</b><span>{option}</span>{selected.includes(option) && <Check />}</button>)}</div><Button className="rivals-primary rapid-fire-lock" loading={working && pendingAction === 'answer'} disabled={selected.length !== 2} onClick={() => onSubmit(null, selected)}>Lock both answers</Button></div>
+  }
   return question.options?.length ? <div className="study-party-answer"><div className="study-party-options">{question.options.map((option, index) => <button type="button" disabled={working} className={answer === option ? 'selected' : ''} onClick={() => onSubmit(null, option)} key={option}><b>{String.fromCharCode(65 + index)}</b><span>{option}</span></button>)}</div></div> : <form className="study-party-answer" onSubmit={onSubmit}><div className="study-party-text-answer"><input autoFocus maxLength="60" value={answer} onChange={event => setAnswer(event.target.value.replace(/\s+/g, ''))} placeholder="One-word answer" aria-label="One-word answer" /><small>One word only</small><Button className="rivals-primary" loading={working} disabled={!answer.trim()}><Send /> Lock answer</Button></div></form>
 }
 

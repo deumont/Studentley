@@ -23,6 +23,8 @@ export const startStudyParty = partyId => studyPartyRequest('start', { partyId }
 export const startStudyPartyCountdown = partyId => studyPartyRequest('start_countdown', { partyId })
 export const openStudyPartyQuestion = partyId => studyPartyRequest('open_question', { partyId })
 export const respondStudyPartyDouble = (partyId, accept) => studyPartyRequest('double_or_nothing', { partyId, accept })
+export const selectStudyPartyScoreSwap = (partyId, targetUserId) => studyPartyRequest('score_swap', { partyId, targetUserId })
+export const actStudyPartyPoker = (partyId, action, amount = 0) => studyPartyRequest('poker_action', { partyId, action, amount })
 export const spinStudyPartyWheel = partyId => studyPartyRequest('spin_wheel', { partyId })
 export const requestStudyPartyPause = partyId => studyPartyRequest('request_pause', { partyId })
 export const voteStudyPartyPause = (partyId, accept) => studyPartyRequest('vote_pause', { partyId, accept })
