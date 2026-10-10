@@ -1,5 +1,5 @@
 import { createClient } from '@supabase/supabase-js'
-import { createHash } from 'node:crypto'
+import { createHash, randomInt } from 'node:crypto'
 import { requireUser } from './_auth.js'
 
 export const config = { maxDuration: 60 }
@@ -13,7 +13,7 @@ const COUNTDOWN_MS = 3000
 const DOUBLE_OFFER_MS = 25000
 const DOUBLE_QUESTION_SECONDS = 20
 const SPECIAL_CHOICE_MS = 25000
-const POKER_BET_MS = 30000
+const POKER_BET_MS = 40000
 const WHEEL_SPIN_MS = 7000
 const QUESTION_OPEN_DELAY_MS = 700
 // A player who stops acknowledging the live state must never hold the room.
@@ -32,6 +32,7 @@ const SWAP_RESULT_PREFIX = '__quizz_show_swap_result__:'
 const SWAP_CHOICE_PREFIX = '__quizz_show_swap_choice__:'
 const POKER_BET_PREFIX = '__quizz_show_poker_bet__:'
 const POKER_READY_PREFIX = '__quizz_show_poker_ready__:'
+const POKER_COUNTDOWN_PREFIX = '__quizz_show_poker_countdown__:'
 const POKER_ACTIVE_PREFIX = '__quizz_show_poker_active__:'
 const POKER_RESULT_PREFIX = '__quizz_show_poker_result__:'
 const WHEEL_OFFER_PREFIX = '__quizz_show_wheel_offer__:'
@@ -74,7 +75,7 @@ const doubleState = party => {
 const swapChoiceState = party => markerPayload(party, SWAP_CHOICE_PREFIX)
 const swapState = party => markerPayload(party, SWAP_RESULT_PREFIX)
 const pokerState = party => {
-  for (const [phase, prefix] of [['poker_bet', POKER_BET_PREFIX], ['poker_ready', POKER_READY_PREFIX], ['poker_question', POKER_ACTIVE_PREFIX], ['poker_reveal', POKER_RESULT_PREFIX]]) {
+  for (const [phase, prefix] of [['poker_bet', POKER_BET_PREFIX], ['poker_ready', POKER_READY_PREFIX], ['poker_countdown', POKER_COUNTDOWN_PREFIX], ['poker_question', POKER_ACTIVE_PREFIX], ['poker_reveal', POKER_RESULT_PREFIX]]) {
     const payload = markerPayload(party, prefix)
     if (payload) return { phase, prefix, payload }
   }
@@ -600,8 +601,12 @@ function chooseNextQuestion(party, players) {
   const used = party.used_question_indexes || []
   let available = questions.map((question, index) => ({ question, index })).filter(item => !used.includes(item.index))
   if (!used.length) {
-    const nonSwapOpening = available.filter(item => !item.question.swap_round)
-    if (nonSwapOpening.length) available = nonSwapOpening
+    const regularOpening = available.filter(item => !item.question.swap_round && item.question.round_type !== 'poker')
+    if (regularOpening.length) available = regularOpening
+  }
+  if (!players.some(player => Number(player.score || 0) > 0)) {
+    const wagerableLater = available.filter(item => item.question.round_type !== 'poker')
+    if (wagerableLater.length) available = wagerableLater
   }
   if (!available.length) return null
   if (available.length === 1) return available[0]
@@ -614,7 +619,7 @@ function chooseNextQuestion(party, players) {
 }
 
 function roundIntro(question) {
-  if (question.swap_round) return 'Score Swap Round! Buzz in, get it right, then choose a player and exchange your pre-question totals. Leaders cannot swap.'
+  if (question.swap_round) return 'This is a Switch Points Round!'
   if (question.round_type === 'poker') return 'Poker Round! First comes the question, then the betting. Fold, call or raise before the answers appear. Winner takes the entire pot!'
   if (question.is_final) return `Final question! Everything comes down to this ${roundName(question.round_type)}.`
   const openings = [
@@ -649,11 +654,42 @@ async function startParty(db, userId, input) {
   return { party: await serializeParty(db, data, userId) }
 }
 
+async function beginPokerBetting(db, party) {
+  const question = party.questions?.[party.current_question]
+  if (!question || question.round_type !== 'poker') return party
+  const players = await getPartyPlayers(db, party.id)
+  const profiles = await getProfiles(db, players.map(player => player.user_id))
+  const ordered = [...players]
+    .sort((left, right) => playerName(profiles.get(left.user_id)).localeCompare(playerName(profiles.get(right.user_id)), 'en', { sensitivity: 'base' }))
+  const rotation = ordered.length ? Number(party.current_question || 0) % ordered.length : 0
+  const order = [...ordered.slice(rotation), ...ordered.slice(0, rotation)].map(player => ({ user_id: player.user_id, display_name: playerName(profiles.get(player.user_id)) }))
+  const bettingEndsAt = new Date(Date.now() + POKER_BET_MS).toISOString()
+  const payload = {
+    order,
+    actor_user_id: order[0]?.user_id || null,
+    current_bet: 0,
+    bets: {},
+    folded_user_ids: [],
+    pending_user_ids: order.map(player => player.user_id),
+    pot: 0,
+    betting_ends_at: bettingEndsAt,
+    message: `Poker Round! The question is on the table. ${order[0]?.display_name || 'First player'}, open the betting. You have 40 seconds; every committed point stays in the pot, even after a fold.`,
+  }
+  const { data, error } = await db.from('rival_study_parties').update({
+    phase: 'intermission', directed_user_id: payload.actor_user_id, attempted_user_ids: [],
+    phase_deadline: bettingEndsAt, host_message: markerMessage(POKER_BET_PREFIX, payload),
+  }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return data || getPartyRecord(db, party.id)
+}
+
 async function startQuestionCountdown(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can start the countdown.'), { status: 403 })
   const double = doubleState(party)
   if (party.status !== 'active' || (!isQuestionIntro(party) && double?.phase !== 'double_intro')) return { party: await serializeParty(db, party, userId) }
+  const question = party.questions?.[party.current_question]
+  if (!double && question?.round_type === 'poker') return { party: await serializeParty(db, await beginPokerBetting(db, party), userId) }
   const visibleMessage = publicHostMessage(party)
   const { data, error } = await db.from('rival_study_parties').update({
     phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(),
@@ -669,32 +705,13 @@ async function openQuestion(db, userId, input) {
   const party = await getPartyRecord(db, input.partyId)
   if (party.host_user_id !== userId) throw Object.assign(new Error('Only the host can reveal the answers.'), { status: 403 })
   const double = doubleState(party)
-  if (party.status !== 'active' || (!isQuestionCountdown(party) && double?.phase !== 'double_countdown')) return { party: await serializeParty(db, party, userId) }
+  const poker = pokerState(party)
+  if (party.status !== 'active' || (!isQuestionCountdown(party) && double?.phase !== 'double_countdown' && poker?.phase !== 'poker_countdown')) return { party: await serializeParty(db, party, userId) }
   const question = party.questions?.[party.current_question]
   if (!question) throw Object.assign(new Error('The next question is missing.'), { status: 409 })
+  if (poker?.phase === 'poker_countdown') return { party: await serializeParty(db, await openPokerAnswers(db, party), userId) }
   if (!double && question.round_type === 'poker') {
-    const players = await getPartyPlayers(db, party.id)
-    const profiles = await getProfiles(db, players.map(player => player.user_id))
-    const ordered = [...players]
-      .sort((left, right) => playerName(profiles.get(left.user_id)).localeCompare(playerName(profiles.get(right.user_id)), 'en', { sensitivity: 'base' }))
-    const rotation = ordered.length ? Number(party.current_question || 0) % ordered.length : 0
-    const order = [...ordered.slice(rotation), ...ordered.slice(0, rotation)].map(player => ({ user_id: player.user_id, display_name: playerName(profiles.get(player.user_id)) }))
-    const payload = {
-      order,
-      actor_user_id: order[0]?.user_id || null,
-      current_bet: 0,
-      bets: {},
-      folded_user_ids: [],
-      pending_user_ids: order.map(player => player.user_id),
-      pot: 0,
-      message: `Poker Round! The question is on the table. ${order[0]?.display_name || 'First player'}, open the betting—everyone else can call, fold or raise. Winner takes the entire pot!`,
-    }
-    const { data, error } = await db.from('rival_study_parties').update({
-      phase: 'intermission', directed_user_id: payload.actor_user_id, attempted_user_ids: [],
-      phase_deadline: new Date(Date.now() + POKER_BET_MS).toISOString(), host_message: markerMessage(POKER_BET_PREFIX, payload),
-    }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
-    if (error) throw error
-    return { party: await serializeParty(db, data || await getPartyRecord(db, party.id), userId) }
+    return { party: await serializeParty(db, await beginPokerBetting(db, party), userId) }
   }
   const opensAt = Date.now() + QUESTION_OPEN_DELAY_MS
   const questions = party.questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(opensAt).toISOString() } : item)
@@ -815,7 +832,7 @@ async function actPoker(db, userId, input) {
 
   const { data, error } = await db.from('rival_study_parties').update({
     directed_user_id: nextPayload.actor_user_id,
-    phase_deadline: new Date(Date.now() + POKER_BET_MS).toISOString(),
+    phase_deadline: nextPayload.betting_ends_at || party.phase_deadline,
     host_message: markerMessage(POKER_BET_PREFIX, nextPayload),
   }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
   if (error) throw error
@@ -831,9 +848,21 @@ async function actPoker(db, userId, input) {
   return { party: await serializeParty(db, updated, userId) }
 }
 
-async function openPokerAnswers(db, party) {
+async function startPokerCountdown(db, party) {
   const state = pokerState(party)
   if (state?.phase !== 'poker_ready') return party
+  const payload = { ...state.payload, message: 'Bets are locked. Get ready—answers open after 3, 2, 1, GO!' }
+  const { data, error } = await db.from('rival_study_parties').update({
+    phase: 'intermission', directed_user_id: null, phase_deadline: new Date(Date.now() + COUNTDOWN_MS).toISOString(),
+    host_message: markerMessage(POKER_COUNTDOWN_PREFIX, payload),
+  }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  return data || getPartyRecord(db, party.id)
+}
+
+async function openPokerAnswers(db, party) {
+  const state = pokerState(party)
+  if (state?.phase !== 'poker_countdown') return party
   const opensAt = Date.now() + QUESTION_OPEN_DELAY_MS
   const questions = party.questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(opensAt).toISOString() } : item)
   const payload = { ...state.payload, message: `Cards up! The answers are live. Fastest correct player wins all ${state.payload.pot || 0} points in the pot!` }
@@ -1181,10 +1210,12 @@ async function advanceParty(db, party) {
   if (party.phase === 'intermission' && current) {
     if (swapChoice) return completeScoreSwap(db, party, swapChoice.targets?.[0]?.user_id)
     if (poker?.phase === 'poker_bet') return expirePokerBetting(db, party)
-    if (poker?.phase === 'poker_ready') return openPokerAnswers(db, party)
+    if (poker?.phase === 'poker_ready') return startPokerCountdown(db, party)
+    if (poker?.phase === 'poker_countdown') return openPokerAnswers(db, party)
     if (wheel?.phase === 'wheel_offer') return beginComebackWheelSpin(db, party)
     if (wheel?.phase === 'wheel_spinning') return finishWheelSpin(db, party)
     if (double?.phase === 'double_offer') return finishQuestionFlow(db, party)
+    if (isQuestionIntro(party) && current.round_type === 'poker') return beginPokerBetting(db, party)
     const openingQuestion = double?.phase === 'double_countdown' || isQuestionCountdown(party)
     const opensAt = openingQuestion ? Date.now() + QUESTION_OPEN_DELAY_MS : null
     const questionsWithStart = openingQuestion ? questions.map((item, index) => index === party.current_question ? { ...item, _started_at: new Date(opensAt).toISOString() } : item) : questions
@@ -1234,7 +1265,7 @@ async function continueHostPhase(db, userId, input) {
   const double = doubleState(party)
   const poker = pokerState(party)
   const wheel = wheelState(party)
-  if (poker?.phase === 'poker_ready') return { party: await serializeParty(db, await openPokerAnswers(db, party), userId) }
+  if (poker?.phase === 'poker_ready') return { party: await serializeParty(db, await startPokerCountdown(db, party), userId) }
   const isPassiveIntermission = party.phase === 'intermission'
     && !double
     && !wheel
@@ -1428,7 +1459,9 @@ async function beginComebackWheelSpin(db, party) {
   const state = wheelState(party)
   if (state?.phase !== 'wheel_offer') return party
   const outcomes = [50, 100, 150, 200, 300, 400, -50, 'swap']
-  const stopIndex = Math.floor(Math.random() * outcomes.length)
+  // randomInt samples every wheel segment uniformly; the saved index also drives
+  // the exact visual stop, so the displayed landing can never disagree.
+  const stopIndex = randomInt(outcomes.length)
   const outcome = outcomes[stopIndex]
   const payload = { ...state.payload, outcome, stop_index: stopIndex, message: `${state.payload.target_name} is spinning the Comeback Wheel!` }
   const { data, error } = await db.from('rival_study_parties').update({ phase: 'intermission', phase_deadline: new Date(Date.now() + WHEEL_SPIN_MS).toISOString(), host_message: markerMessage(WHEEL_SPINNING_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
