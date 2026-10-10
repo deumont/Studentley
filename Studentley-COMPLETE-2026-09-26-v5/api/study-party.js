@@ -306,6 +306,8 @@ async function serializeParty(db, party, userId) {
   const ownAnswer = answers.find(answer => answer.user_id === userId)
   const currentUserResult = doubleReveal && double.payload.target_user_id === userId
     ? { correct: Boolean(double.payload.correct), points: Number(double.payload.delta || 0), answered: true, double_or_nothing: true }
+    : poker?.phase === 'poker_reveal' && poker.payload.won_by_fold
+      ? null
     : questionReveal && !double && !wheel
       ? ownAnswer
         ? { correct: Boolean(ownAnswer.correct), points: Number(ownAnswer.points || 0), answered: true, double_or_nothing: false }
@@ -743,6 +745,38 @@ function nextPokerActor(payload) {
   return pending[0] || null
 }
 
+async function finishPokerByFold(db, party) {
+  const state = pokerState(party)
+  if (state?.phase !== 'poker_bet') return party
+  const active = (state.payload.order || []).filter(player => !(state.payload.folded_user_ids || []).includes(player.user_id))
+  if (active.length !== 1) return readyPokerQuestion(db, party)
+  const winner = active[0]
+  const pot = Object.values(state.payload.bets || {}).reduce((sum, value) => sum + Number(value || 0), 0)
+  const payload = {
+    ...state.payload,
+    actor_user_id: null,
+    pending_user_ids: [],
+    pot,
+    won_by_fold: true,
+    winner_user_id: winner.user_id,
+    winner_name: winner.display_name,
+    message: `${winner.display_name} wins the entire ${pot}-point pot! Everyone else folded, so no answer is needed.`,
+  }
+  const { data: claimed, error } = await db.from('rival_study_parties').update({
+    phase: 'reveal', directed_user_id: null, phase_deadline: new Date(Date.now() + REVEAL_MS).toISOString(),
+    host_message: markerMessage(POKER_RESULT_PREFIX, payload),
+  }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
+  if (error) throw error
+  if (!claimed) return getPartyRecord(db, party.id)
+  const players = await getPartyPlayers(db, party.id)
+  const player = players.find(item => item.user_id === winner.user_id)
+  if (player && pot > 0) {
+    const { error: scoreError } = await db.from('rival_study_party_players').update({ score: Number(player.score || 0) + pot }).eq('party_id', party.id).eq('user_id', winner.user_id)
+    if (scoreError) throw scoreError
+  }
+  return getPartyRecord(db, party.id)
+}
+
 async function readyPokerQuestion(db, party) {
   const state = pokerState(party)
   if (state?.phase !== 'poker_bet') return party
@@ -775,7 +809,9 @@ async function expirePokerBetting(db, party) {
   payload.message = `Betting time! Unfinished hands fold automatically. ${naturalNameList(active.map(player => player.display_name)) || 'The remaining player'} stays in for the ${payload.pot}-point pot.`
   const { data, error } = await db.from('rival_study_parties').update({ directed_user_id: null, host_message: markerMessage(POKER_BET_PREFIX, payload) }).eq('id', party.id).eq('phase', 'intermission').eq('host_message', party.host_message).select().maybeSingle()
   if (error) throw error
-  return readyPokerQuestion(db, data || await getPartyRecord(db, party.id))
+  const updated = data || await getPartyRecord(db, party.id)
+  const remaining = (payload.order || []).filter(player => !payload.folded_user_ids.includes(player.user_id))
+  return remaining.length === 1 ? finishPokerByFold(db, updated) : readyPokerQuestion(db, updated)
 }
 
 async function actPoker(db, userId, input) {
@@ -848,7 +884,9 @@ async function actPoker(db, userId, input) {
       throw scoreError
     }
   }
-  const updated = bettingComplete ? await readyPokerQuestion(db, data) : data
+  const updated = bettingComplete
+    ? activeIds.length === 1 ? await finishPokerByFold(db, data) : await readyPokerQuestion(db, data)
+    : data
   return { party: await serializeParty(db, updated, userId) }
 }
 
