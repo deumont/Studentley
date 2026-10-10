@@ -53,7 +53,7 @@ const playableTimeLimit = question => clamp(question?.time_limit || 25, 20, 60)
 const roomCode = () => Array.from({ length: 6 }, () => 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'[Math.floor(Math.random() * 32)]).join('')
 const isUuid = value => /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(value || ''))
 const normalizedRoundType = value => value === 'team_round' ? 'buzzer' : value
-const roundName = value => ({ buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice', quick_answer: 'One Word', explain_it: 'One Word', rapid_fire: 'Rapid Fire', true_false: 'True / False', poker: 'Poker Round' }[normalizedRoundType(value)] || 'Quizz Show')
+const roundName = value => ({ buzzer: 'Buzzer Round', multiple_choice: 'Multiple Choice', quick_answer: 'One Word', explain_it: 'One Word', rapid_fire: 'Rapid Fire', true_false: 'True and False', poker: 'Poker Round' }[normalizedRoundType(value)] || 'Quizz Show')
 const normalize = value => String(value || '').toLowerCase().normalize('NFKD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9]+/g, ' ').trim()
 const isQuestionIntro = party => party.phase === 'intermission' && String(party.host_message || '').startsWith(QUESTION_INTRO_PREFIX)
 const isQuestionCountdown = party => party.phase === 'intermission' && String(party.host_message || '').startsWith(QUESTION_COUNTDOWN_PREFIX)
@@ -165,6 +165,7 @@ function publicQuestion(question, reveal, answersVisible) {
   if (!question) return null
   const introductions = ['Here we go!', 'Eyes up!', 'This could change everything!', 'Get ready!', 'Who is quickest?']
   const rapidAnswers = Array.isArray(question.correct_answers) ? question.correct_answers.filter(Boolean).slice(0, 2) : []
+  const spokenPrompt = String(question.prompt || '').replace(/true\s*[\/-]\s*false/gi, 'true and false')
   return {
     round_type: normalizedRoundType(question.round_type),
     prompt: question.prompt,
@@ -176,7 +177,7 @@ function publicQuestion(question, reveal, answersVisible) {
     difficulty: question.difficulty,
     time_limit: liveQuestionTimeLimit(question),
     points: 200,
-    voice_prompt: `${introductions[String(question.prompt || '').length % introductions.length]} ${question.prompt}`,
+    voice_prompt: `${introductions[String(question.prompt || '').length % introductions.length]} ${spokenPrompt}`,
     directed: false,
     swap_round: Boolean(question.swap_round),
     is_final: Boolean(question.is_final),
@@ -643,8 +644,11 @@ async function startParty(db, userId, input) {
   const topic = safeText(party.topic || party.subject || 'today’s challenge', 120)
   const welcome = `Welcome to the Studentley Quizz Show! Tonight's topic is ${topic}. Stepping into the arena are ${contenders}. Contenders, get ready—the lights are up, the points are waiting, and the show starts now!`
   const now = new Date()
+  const openingLeader = rankedPlayers(players, profiles)[0]?.user_id || null
+  const questions = party.questions.map((question, index) => index === next.index ? { ...question, _leader_before_user_id: openingLeader } : question)
   const { data, error } = await db.from('rival_study_parties').update({
     status: 'active', phase: 'intermission', game_mode: 'free_for_all', started_at: now.toISOString(), current_question: next.index,
+    questions,
     used_question_indexes: [next.index], directed_user_id: null, buzzed_by: null, buzzed_at: null,
     attempted_user_ids: [], phase_deadline: new Date(now.getTime() + INTRO_FAILSAFE_MS).toISOString(),
     host_message: markerMessage(SHOW_INTRO_PREFIX, { message: welcome }),
@@ -1002,8 +1006,14 @@ async function completeParty(db, party) {
   return claimed || getPartyRecord(db, party.id)
 }
 
-function leadMessage(players, profiles, nextQuestion) {
-  const sorted = [...players].sort((left, right) => Number(right.score || 0) - Number(left.score || 0))
+function rankedPlayers(players, profiles) {
+  return [...players].sort((left, right) => Number(right.score || 0) - Number(left.score || 0)
+    || playerName(profiles.get(left.user_id)).localeCompare(playerName(profiles.get(right.user_id)), 'en', { sensitivity: 'base' })
+    || String(left.user_id).localeCompare(String(right.user_id)))
+}
+
+function leadMessage(players, profiles, nextQuestion, previousLeaderUserId, turn, previousQuip = '') {
+  const sorted = rankedPlayers(players, profiles)
   const streakPlayer = sorted.find(player => Number(player.streak || 0) >= 3)
   const leader = sorted[0]
   const runnerUp = sorted[1]
@@ -1014,22 +1024,34 @@ function leadMessage(players, profiles, nextQuestion) {
   const messages = []
   if (streakPlayer) messages.push(`${playerName(profiles.get(streakPlayer.user_id))} is on a huge ${streakPlayer.streak}-answer streak!`)
   if (leader && gap > 0) {
-    messages.push(`${leaderName} is the new leader with ${leader.score} points!`)
-    messages.push(`${leaderName} takes the lead—but this is still anyone's game!`)
+    if (previousLeaderUserId && previousLeaderUserId !== leader.user_id) {
+      messages.push(`${leaderName} is the new leader with ${leader.score} points!`)
+      messages.push(`${leaderName} takes the lead—but this is still anyone's game!`)
+    } else if (previousLeaderUserId === leader.user_id) {
+      messages.push(`${leaderName} holds the lead with ${leader.score} points!`)
+      messages.push(`${leaderName} is still out in front—but the chase is on!`)
+    } else messages.push(`${leaderName} leads with ${leader.score} points!`)
   }
   if (leader && runnerUp && gap <= 75) messages.push(`Only ${gap} points separate the top two. This is close!`)
   if (last && leader && last.user_id !== leader.user_id) {
     messages.push(`${lastName}, your score is taking a study break. Time to wake it up!`)
     messages.push(`${lastName} is currently holding the leaderboard upside down. A comeback would look excellent right now!`)
     messages.push(`${lastName}, the bottom of the board has had enough of you. Make your move!`)
+    messages.push(`${lastName}, the scoreboard has filed a missing-points report. Time for a comeback!`)
+    messages.push(`${lastName}, your points are playing hide-and-seek. Go find them!`)
+    messages.push(`${lastName}, the leaderboard says there is plenty of room upstairs!`)
+    messages.push(`${lastName}, this is the perfect moment for a dramatic plot twist!`)
+    messages.push(`${lastName}, the next question has comeback written all over it!`)
   }
   if (leader && gap >= 150) messages.push(`${leaderName} is running away with it! Somebody stop this academic rampage!`)
   messages.push('That answer just shook the studio!')
   messages.push('The scoreboard is moving—nobody relax yet!')
   messages.push('That question changed the scoreboard!')
   messages.push('Nice round—get ready, the next one is coming!')
-  const picked = messages[Math.floor(Math.random() * messages.length)]
-  return `${picked} Next up: ${roundName(nextQuestion.round_type)}.`
+  const freshMessages = messages.filter(message => message !== previousQuip)
+  const pool = freshMessages.length ? freshMessages : messages
+  const picked = pool[(Math.max(0, Number(turn) || 0) + String(nextQuestion.prompt || '').length) % pool.length]
+  return { quip: picked, message: `${picked} Next up: ${roundName(nextQuestion.round_type)}.` }
 }
 
 async function queueNextQuestion(db, party) {
@@ -1038,10 +1060,20 @@ async function queueNextQuestion(db, party) {
   const next = chooseNextQuestion(party, players)
   if (!next) return completeParty(db, party)
   const profiles = await getProfiles(db, players.map(player => player.user_id))
+  const previousLeaderUserId = party.questions?.[party.current_question]?._leader_before_user_id || null
+  const previousQuip = party.questions?.[0]?._last_host_quip || ''
+  const commentary = leadMessage(players, profiles, next.question, previousLeaderUserId, party.used_question_indexes?.length || 0, previousQuip)
+  const nextLeaderUserId = rankedPlayers(players, profiles)[0]?.user_id || null
+  const questions = party.questions.map((question, index) => {
+    let updated = index === next.index ? { ...question, _leader_before_user_id: nextLeaderUserId } : question
+    if (index === 0) updated = { ...updated, _last_host_quip: commentary.quip }
+    return updated
+  })
   const { data, error } = await db.from('rival_study_parties').update({
     phase: 'intermission', current_question: next.index, used_question_indexes: [...(party.used_question_indexes || []), next.index],
+    questions,
     directed_user_id: null, buzzed_by: null, buzzed_at: null, attempted_user_ids: [],
-    phase_deadline: new Date(Date.now() + INTERMISSION_MS).toISOString(), host_message: leadMessage(players, profiles, next.question),
+    phase_deadline: new Date(Date.now() + INTERMISSION_MS).toISOString(), host_message: commentary.message,
   }).eq('id', party.id).eq('phase', party.phase).eq('host_message', party.host_message).select().maybeSingle()
   if (error) throw error
   return data || getPartyRecord(db, party.id)
